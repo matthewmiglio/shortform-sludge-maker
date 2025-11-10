@@ -35,13 +35,14 @@ class Post:
 
 
 class RedditScraper:
-    def __init__(self):
+    def __init__(self, stop_flag=None):
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized ")
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()), options=chrome_options
         )
         self.saver = DataSaver()
+        self.stop_flag = stop_flag
 
     def get_posts(self, thread_link, max_posts=50, scroll_pause=0.2, max_scrolls=200):
         self.driver.get(thread_link)
@@ -53,6 +54,10 @@ class RedditScraper:
         last_height = self.driver.execute_script("return document.body.scrollHeight")
 
         while len(post_links) < max_posts and scrolls < max_scrolls:
+            if self.stop_flag and self.stop_flag.is_set():
+                print(f"[!] Stop flag detected during scroll in {thread_link}")
+                return list(post_links)
+
             # Scroll to bottom
             self.driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
@@ -221,19 +226,31 @@ class DataSaver:
 
 def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
     posts_scraped = 0
-    scraper = RedditScraper()
+    scraper = RedditScraper(stop_flag=stop_flag)
     data_saver = DataSaver()
 
     try:
+        if stop_flag.is_set():
+            print(f"[!] Stop flag set before starting {thread_url}")
+            scraper.driver.quit()
+            return
+
         post_links = scraper.get_posts(thread_url, max_posts=posts_to_scrape)[
             :posts_to_scrape
         ]
+
+        if stop_flag.is_set():
+            print(f"[!] Stopping thread for {thread_url} after getting post links")
+            scraper.driver.quit()
+            return
+
         random.shuffle(post_links)
 
         for post_link in post_links:
             if stop_flag.is_set():
                 print(f"[!] Stopping thread for {thread_url}")
-                break
+                scraper.driver.quit()
+                return
             if posts_scraped >= posts_to_scrape:
                 break
             post = scraper.get_post_content(post_link)
@@ -242,20 +259,52 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
 
     except Exception as e:
         print(f"Error scraping thread {thread_url}: {e}")
+    finally:
+        try:
+            scraper.driver.quit()
+            print(f"[!] Browser closed for {thread_url}")
+        except:
+            pass
 
 
 def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
-    threads = []
-    for thread in threads_to_scrape:
-        try:
-            t = threading.Thread(
-                target=scrape_thread, args=(thread, posts_to_scrape, stop_flag)
-            )
-            t.start()
-            threads.append(t)
-        except Exception as e:
-            print(f"[!] Failed to start thread for {thread}: {e}")
-    return threads
+    max_concurrent_threads = 5
+    active_threads = []
+    remaining_threads = list(threads_to_scrape)
+    random.shuffle(remaining_threads)
+
+    print(f"Starting scraper with max {max_concurrent_threads} concurrent threads")
+    print(f"Total subreddits to scrape: {len(remaining_threads)}")
+
+    while remaining_threads or active_threads:
+        if stop_flag.is_set():
+            print("Stop flag detected, waiting for active threads to finish...")
+            break
+
+        active_threads = [t for t in active_threads if t.is_alive()]
+
+        while len(active_threads) < max_concurrent_threads and remaining_threads:
+            thread_url = remaining_threads.pop(0)
+            try:
+                print(f"\nStarting scraper thread for: {thread_url}")
+                print(f"Active threads: {len(active_threads) + 1}/{max_concurrent_threads}")
+                print(f"Remaining subreddits: {len(remaining_threads)}")
+
+                t = threading.Thread(
+                    target=scrape_thread, args=(thread_url, posts_to_scrape, stop_flag)
+                )
+                t.start()
+                active_threads.append(t)
+            except Exception as e:
+                print(f"[!] Failed to start thread for {thread_url}: {e}")
+
+        time.sleep(2)
+
+    for t in active_threads:
+        t.join()
+
+    print("\nAll scraping threads completed!")
+    return active_threads
 
 
 if __name__ == "__main__":

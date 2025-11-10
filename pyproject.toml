@@ -27,7 +27,10 @@ dependencies = [
     "scipy (>=1.16.0,<2.0.0)",
     "faster-whisper (>=1.1.1,<2.0.0)",
     "hf-xet (>=1.1.5,<2.0.0)",
-    "tiktoken (>=0.9.0,<0.10.0)"
+    "tiktoken (>=0.9.0,<0.10.0)",
+    "google-auth (>=2.15,<2.42)",
+    "google-api-python-client (>=2.187.0,<3.0.0)",
+    "google-auth-oauthlib (==1.2.3)"
 ]
 
 

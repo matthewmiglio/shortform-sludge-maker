@@ -10,3 +10,5 @@ temp
 post_usage_history.csv
 token.json
 youtube_post_history.csv
+client_secret.json
+.claude
