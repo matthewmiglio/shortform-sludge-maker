@@ -37,7 +37,11 @@ Reddit story:
 
 Title:"""
 
-DESCRIPTION_PROMPT = """Write a 2-3 sentence YouTube Shorts description with a hook and 3-5 relevant hashtags for this Reddit story. Only output the description, nothing else.
+DESCRIPTION_PROMPT = """Write a YouTube Shorts description for this Reddit story with the following format:
+Hook: [1-2 engaging sentences that make viewers want to watch]
+Hashtags: [3-5 relevant hashtags]
+
+Only output in that exact format, nothing else.
 
 Reddit story:
 {text}
@@ -51,7 +55,29 @@ def _format_prompt(prompt_template: str, text: str) -> str:
     return f"<|im_start|>user\n{prompt_text}<|im_end|>\n<|im_start|>assistant\n"
 
 
-def _clean_output(text: str) -> str:
+def _strip_emojis(text: str) -> str:
+    """Remove emojis and other non-ASCII special characters."""
+    # Remove emoji unicode ranges
+    emoji_pattern = re.compile(
+        "["
+        "\U0001F600-\U0001F64F"  # emoticons
+        "\U0001F300-\U0001F5FF"  # symbols & pictographs
+        "\U0001F680-\U0001F6FF"  # transport & map
+        "\U0001F1E0-\U0001F1FF"  # flags
+        "\U00002702-\U000027B0"  # dingbats
+        "\U000024C2-\U0001F251"  # enclosed characters
+        "\U0001F900-\U0001F9FF"  # supplemental symbols
+        "\U0001FA00-\U0001FA6F"  # chess symbols
+        "\U0001FA70-\U0001FAFF"  # symbols extended
+        "\U00002600-\U000026FF"  # misc symbols
+        "\U00002700-\U000027BF"  # dingbats
+        "]+",
+        flags=re.UNICODE,
+    )
+    return emoji_pattern.sub("", text)
+
+
+def _clean_output(text: str, is_description: bool = False) -> str:
     """Clean up model output."""
     text = text.strip()
     # Remove quotes
@@ -61,6 +87,22 @@ def _clean_output(text: str) -> str:
         text = text[1:-1]
     # Remove prefix labels
     text = re.sub(r'^(Title|Description):\s*', '', text, flags=re.IGNORECASE)
+    # Strip emojis
+    text = _strip_emojis(text)
+    # Remove markdown bold formatting (**text** -> text)
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+    # Remove "Hook:" and "Hashtags:" labels
+    text = re.sub(r'^Hook:\s*', '', text, flags=re.IGNORECASE | re.MULTILINE)
+    text = re.sub(r'\nHashtags?:\s*', '\n', text, flags=re.IGNORECASE)
+
+    if is_description:
+        # Preserve newlines for description formatting but clean up extra whitespace
+        lines = [re.sub(r'\s+', ' ', line).strip() for line in text.split('\n')]
+        text = '\n'.join(line for line in lines if line)
+    else:
+        # Clean up any double spaces for titles
+        text = re.sub(r'\s+', ' ', text)
+
     return text.strip()
 
 
@@ -111,7 +153,7 @@ def generate_description(post_title: str, post_content: str) -> str:
     if generated.startswith(prompt):
         generated = generated[len(prompt):]
 
-    description = _clean_output(generated)
+    description = _clean_output(generated, is_description=True)
     return description
 
 

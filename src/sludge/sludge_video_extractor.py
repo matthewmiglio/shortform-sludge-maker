@@ -6,7 +6,9 @@ import cv2
 
 def get_video_duration(video_path):
     clip = VideoFileClip(video_path)
-    return clip.duration
+    duration = clip.duration
+    clip.close()
+    return duration
 
 
 def get_subclip(input_video_path, output_video_path, start_time, end_time):

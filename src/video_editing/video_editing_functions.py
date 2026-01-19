@@ -57,15 +57,19 @@ def add_audio_to_video(video_path, audio_path, out_video_path):
     video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
 
-    # Match the audio duration to the video duration (trim if needed)
-    if audio.duration > video.duration:
-        audio = audio.subclip(0, video.duration)
+    try:
+        # Match the audio duration to the video duration (trim if needed)
+        if audio.duration > video.duration:
+            audio = audio.subclip(0, video.duration)
 
-    # Set the audio to the video
-    final_video = video.set_audio(audio)
+        # Set the audio to the video
+        final_video = video.set_audio(audio)
 
-    # Write the final video
-    final_video.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+        # Write the final video
+        final_video.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
+        audio.close()
 
     return out_video_path
 
@@ -81,11 +85,14 @@ def resize_video(video_path, output_path, width, height):
     # Load the video
     video = VideoFileClip(video_path)
 
-    # Resize video
-    resized_video = video.resize(newsize=(width, height))
+    try:
+        # Resize video
+        resized_video = video.resize(newsize=(width, height))
 
-    # Write the result
-    resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+        # Write the result
+        resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
 
     return output_path
 
@@ -103,11 +110,14 @@ def make_blur_video(video_path, output_path, blur_amount):
 
     # Load the video and apply blur
     video = VideoFileClip(video_path)
-    blurred_video = video.fl_image(blur_frame)
 
-    # Write the result
+    try:
+        blurred_video = video.fl_image(blur_frame)
 
-    blurred_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+        # Write the result
+        blurred_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
 
     return output_path
 
@@ -129,15 +139,18 @@ def resize_video_keep_aspect_ratio(video_path, output_path, target_width):
     # Load the video
     video = VideoFileClip(video_path)
 
-    # Calculate new height to preserve aspect ratio
-    aspect_ratio = video.h / video.w
-    target_height = int(target_width * aspect_ratio)
+    try:
+        # Calculate new height to preserve aspect ratio
+        aspect_ratio = video.h / video.w
+        target_height = int(target_width * aspect_ratio)
 
-    # Resize video
-    resized_video = video.resize(newsize=(target_width, target_height))
+        # Resize video
+        resized_video = video.resize(newsize=(target_width, target_height))
 
-    # Write the result
-    resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+        # Write the result
+        resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
 
     return output_path
 
@@ -158,20 +171,24 @@ def paste_video_onto_video(
     background_clip = VideoFileClip(background_video)
     foreground_clip = VideoFileClip(foreground_video_resized)
 
-    # Center foreground on background
-    x_center = (background_clip.w - foreground_clip.w) // 2
-    y_center = (background_clip.h - foreground_clip.h) // 2
-    foreground_clip = foreground_clip.set_position((x_center, y_center))
+    try:
+        # Center foreground on background
+        x_center = (background_clip.w - foreground_clip.w) // 2
+        y_center = (background_clip.h - foreground_clip.h) // 2
+        foreground_clip = foreground_clip.set_position((x_center, y_center))
 
-    # Match background duration to foreground
-    background_clip = background_clip.set_duration(foreground_clip.duration)
+        # Match background duration to foreground
+        background_clip = background_clip.set_duration(foreground_clip.duration)
 
-    # Composite the two clips
-    final = CompositeVideoClip([background_clip, foreground_clip])
-    final = final.set_audio(foreground_clip.audio)  # foreground audio dominates
+        # Composite the two clips
+        final = CompositeVideoClip([background_clip, foreground_clip])
+        final = final.set_audio(foreground_clip.audio)  # foreground audio dominates
 
-    # Write to file
-    final.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+        # Write to file
+        final.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        background_clip.close()
+        foreground_clip.close()
 
     return output_path
 
@@ -350,29 +367,32 @@ def overlay_images_onto_video(
     video = VideoFileClip(video_path)
     image_clips = []
 
-    for frame_info in frames:
-        path = frame_info["frame_path"]
-        start = frame_info["start_time"]
-        end = frame_info["end_time"]
+    try:
+        for frame_info in frames:
+            path = frame_info["frame_path"]
+            start = frame_info["start_time"]
+            end = frame_info["end_time"]
 
-        # Load and convert image to array
-        img = Image.open(path).convert("RGBA")
-        img_array = np.array(img)
+            # Load and convert image to array
+            img = Image.open(path).convert("RGBA")
+            img_array = np.array(img)
 
-        img_clip = (
-            ImageClip(img_array, ismask=False)
-            .set_start(start)
-            .set_end(end)
-            .set_position(("center", "bottom"))
-        )
-        image_clips.append(img_clip)
+            img_clip = (
+                ImageClip(img_array, ismask=False)
+                .set_start(start)
+                .set_end(end)
+                .set_position(("center", "bottom"))
+            )
+            image_clips.append(img_clip)
 
-    # Combine video with all image clips
-    final = CompositeVideoClip([video] + image_clips)
-    final.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+        # Combine video with all image clips
+        final = CompositeVideoClip([video] + image_clips)
+        final.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
 
     print(
-        f"✅ Overlayed {len(frames)} frames onto video in {time.time() - t0:.2f} seconds"
+        f"Overlayed {len(frames)} frames onto video in {time.time() - t0:.2f} seconds"
     )
     return out_video_path
 
@@ -389,23 +409,26 @@ def overlay_image_onto_video(
     # Load the video
     video = VideoFileClip(video_path)
 
-    # Load the caption frame image from disk
-    frame = Image.open(frame_path).convert("RGBA")
-    frame_array = np.array(frame)
+    try:
+        # Load the caption frame image from disk
+        frame = Image.open(frame_path).convert("RGBA")
+        frame_array = np.array(frame)
 
-    # Create image clip for the caption
-    img_clip = (
-        ImageClip(frame_array, ismask=False)
-        .set_start(start_time)
-        .set_end(end_time)
-        .set_position(("center", "bottom"))
-    )
+        # Create image clip for the caption
+        img_clip = (
+            ImageClip(frame_array, ismask=False)
+            .set_start(start_time)
+            .set_end(end_time)
+            .set_position(("center", "bottom"))
+        )
 
-    # Combine original video and the image clip
-    composite = CompositeVideoClip([video, img_clip])
-    composite.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+        # Combine original video and the image clip
+        composite = CompositeVideoClip([video, img_clip])
+        composite.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
+    finally:
+        video.close()
 
-    print(f"✅ Overlayed frame onto video in {time.time() - t0:.2f} seconds")
+    print(f"Overlayed frame onto video in {time.time() - t0:.2f} seconds")
     return out_video_path
 
 

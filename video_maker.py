@@ -113,11 +113,17 @@ def get_post_image(posts, expected_width):
 
 
 def cleanup_temp_files():
+    import time
+    import gc
+
+    # Force garbage collection and wait for file handles to release
+    gc.collect()
+    time.sleep(1)
+
     print("\n[CLEANUP] Starting temp file cleanup...")
     folders = [
         r"temp",
         r"narrations",
-        r"reddit_post_images",
     ]
 
     for folder_path in folders:
@@ -203,7 +209,6 @@ def create_stacked_reddit_scroll_video(output_dir):
     temp_folder_name = r"temp"
     print(f"\n[TEMP] Creating temp folder: {os.path.abspath(temp_folder_name)}")
     os.makedirs(temp_folder_name, exist_ok=True)
-    cleanup_temp_files()
 
     # get scraped post data
     print(f"\n[1] Getting saved scraped reddit data...")
