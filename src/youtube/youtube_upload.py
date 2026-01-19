@@ -9,10 +9,10 @@ import random
 class YoutubeUploader:
     def __init__(self):
         # Load saved credentials
-        if not os.path.exists("token.json"):
+        if not os.path.exists("src/youtube/token.json"):
             raise FileNotFoundError("Google API Token file not found.")
         self.creds = Credentials.from_authorized_user_file(
-            "token.json", ["https://www.googleapis.com/auth/youtube.upload"]
+            "src/youtube/token.json", ["https://www.googleapis.com/auth/youtube.upload"]
         )
 
     def upload_video(
@@ -57,7 +57,7 @@ class YoutubeUploader:
 
 class YoutubePostHistoryManager:
     def __init__(self):
-        self.fp = r"youtube_post_history.csv"
+        self.fp = r"data/youtube_post_history.csv"
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
                 f.write("video_folder_name1,video_folder_name2")

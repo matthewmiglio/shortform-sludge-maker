@@ -7,9 +7,9 @@ import sys
 import subprocess
 from io import StringIO
 
-from scraper import scrape_all_threads
+from src.scraper.scraper import scrape_all_threads
 from video_maker import create_all_stacked_reddit_scroll_videos
-from youtube_upload import (
+from src.youtube.youtube_upload import (
     YoutubeUploader,
     YoutubePostHistoryManager,
     extract_metadata_from_folder,
@@ -40,6 +40,12 @@ class App(tk.Tk):
         self.title("Slop Media Machine")
         self.geometry("800x600")
         self.configure(bg="#1e1e1e")
+
+        # Global stop flag for all operations
+        self.global_stop_flag = threading.Event()
+
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
         self.stats = {
             "posts_scraped": 0,
@@ -130,8 +136,8 @@ class App(tk.Tk):
 
         tk.Button(
             button_frame,
-            text="Export Log",
-            command=self.export_log,
+            text="Copy Log",
+            command=self.copy_log,
             bg="#555555",
             fg="white",
             width=15,
@@ -161,11 +167,31 @@ class App(tk.Tk):
         self.terminal.delete(1.0, tk.END)
         self.terminal.configure(state="disabled")
 
-    def export_log(self):
+    def copy_log(self):
         log_content = self.terminal.get(1.0, tk.END)
-        with open("terminal_log.txt", "w", encoding="utf-8") as f:
-            f.write(log_content)
-        self.log_to_terminal("Log exported to terminal_log.txt")
+        self.clipboard_clear()
+        self.clipboard_append(log_content)
+        self.log_to_terminal("Log copied to clipboard")
+
+    def on_close(self):
+        print("\nShutting down application...")
+        self.global_stop_flag.set()
+
+        # Stop scraper if running
+        if hasattr(self, 'scraper_tab'):
+            self.scraper_tab.stop_flag.set()
+
+        # Stop video generation if running
+        if hasattr(self, 'video_tab'):
+            self.video_tab.stop_flag.set()
+
+        # Force exit after a short delay
+        self.after(500, self._force_exit)
+
+    def _force_exit(self):
+        print("Exiting...")
+        self.destroy()
+        os._exit(0)
 
     def refresh_stats(self):
         scraped_posts_folder = r"reddit_data"
@@ -293,6 +319,7 @@ class VideoTab(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent, bg="#1e1e1e")
         self.controller = controller
+        self.stop_flag = threading.Event()
 
         tk.Label(
             self,
@@ -302,16 +329,30 @@ class VideoTab(tk.Frame):
             font=("Helvetica", 10),
         ).pack(pady=10)
 
+        button_frame = tk.Frame(self, bg="#1e1e1e")
+        button_frame.pack(pady=20)
+
         tk.Button(
-            self,
+            button_frame,
             text="Start Generating Videos",
             command=self.start_generation,
-            width=25,
+            width=20,
             height=2,
             bg="#2196F3",
             fg="white",
-            font=("Helvetica", 12),
-        ).pack(pady=30)
+            font=("Helvetica", 11),
+        ).pack(side="left", padx=5)
+
+        tk.Button(
+            button_frame,
+            text="Stop",
+            command=self.stop_generation,
+            width=10,
+            height=2,
+            bg="#f44336",
+            fg="white",
+            font=("Helvetica", 11),
+        ).pack(side="left", padx=5)
 
         self.status_label = tk.Label(
             self, text="", bg="#1e1e1e", fg="lightgreen", wraplength=300
@@ -320,21 +361,27 @@ class VideoTab(tk.Frame):
 
     def start_generation(self):
         def run():
+            self.stop_flag.clear()
             self.status_label.config(text="Video generation started...", fg="yellow")
             print("\n" + "="*50)
             print("STARTING VIDEO GENERATION")
             print("="*50)
             try:
-                create_all_stacked_reddit_scroll_videos(output_dir=r"final_vids")
+                create_all_stacked_reddit_scroll_videos(output_dir=r"final_vids", stop_flag=self.stop_flag)
                 print("="*50)
-                print("VIDEO GENERATION COMPLETE")
+                print("VIDEO GENERATION STOPPED" if self.stop_flag.is_set() else "VIDEO GENERATION COMPLETE")
                 print("="*50 + "\n")
-                self.status_label.config(text="All videos created!", fg="lightgreen")
+                self.status_label.config(text="Video generation stopped." if self.stop_flag.is_set() else "All videos created!", fg="lightgreen")
             except Exception as e:
                 print(f"ERROR: {e}")
                 self.status_label.config(text=f"Error: {e}", fg="red")
 
         threading.Thread(target=run).start()
+
+    def stop_generation(self):
+        self.stop_flag.set()
+        print("STOP signal sent to video generation...")
+        self.status_label.config(text="Stopping video generation...", fg="orange")
 
 
 class UploadTab(tk.Frame):
@@ -531,13 +578,12 @@ class UploadTab(tk.Frame):
                 print("A browser window will open for authentication...")
                 print("Please complete the authentication in your browser.")
 
-                auth_script_path = r"D:\my_files\my_programs\shortform-sludge-maker\youtube_auth.py"
+                auth_script_path = os.path.join("src", "youtube", "youtube_auth.py")
 
                 result = subprocess.run(
                     [sys.executable, auth_script_path],
                     capture_output=True,
-                    text=True,
-                    cwd=r"D:\my_files\my_programs\shortform-sludge-maker"
+                    text=True
                 )
 
                 if result.returncode == 0:

@@ -7,8 +7,8 @@ final_vids
 sludge_videos
 __pycache__
 temp
-post_usage_history.csv
-token.json
-youtube_post_history.csv
-client_secret.json
+data/post_usage_history.csv
+data/youtube_post_history.csv
+src/youtube/token.json
+src/youtube/client_secret.json
 .claude

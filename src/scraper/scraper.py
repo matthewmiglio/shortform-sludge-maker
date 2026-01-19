@@ -37,16 +37,27 @@ class Post:
 class RedditScraper:
     def __init__(self, stop_flag=None):
         chrome_options = Options()
-        chrome_options.add_argument("--start-maximized ")
+
+        # Use same options as test_scraper.py (proven to work)
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--start-maximized")
+
+        # Single attempt initialization (no retry spam)
         self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()), options=chrome_options
+            service=Service(ChromeDriverManager().install()),
+            options=chrome_options
         )
+        print("Chrome driver initialized successfully")
+
         self.saver = DataSaver()
         self.stop_flag = stop_flag
 
     def get_posts(self, thread_link, max_posts=50, scroll_pause=0.2, max_scrolls=200):
+        # Convert to old.reddit.com to avoid captchas
+        thread_link = thread_link.replace("www.reddit.com", "old.reddit.com")
         self.driver.get(thread_link)
-        time.sleep(5)
+        time.sleep(random.uniform(3, 7))
 
         post_links = set()
         scrolls = 0
@@ -58,14 +69,14 @@ class RedditScraper:
                 print(f"[!] Stop flag detected during scroll in {thread_link}")
                 return list(post_links)
 
-            # Scroll to bottom
+            # Scroll to bottom with random delay
             self.driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-            time.sleep(scroll_pause)
+            time.sleep(scroll_pause + random.uniform(0.1, 0.5))
 
-            # Look for new posts
-            posts = self.driver.find_elements(By.CSS_SELECTOR, "a.absolute.inset-0")
+            # Look for new posts (old.reddit.com uses different selectors)
+            posts = self.driver.find_elements(By.CSS_SELECTOR, "a.title")
             for post in posts:
                 href = post.get_attribute("href")
                 if href and "/comments/" in href:
@@ -87,30 +98,44 @@ class RedditScraper:
 
     def url2thread_name(self, url):
         # https://www.reddit.com/r/AmItheAsshole/comments/1lu69qb/aita_for_pulling_my_daughter_from_soccer_camp_and/
+        # or https://old.reddit.com/r/AmItheAsshole/comments/...
         # extract the AmItheAsshole part
         try:
-            thread_name = url.split("https://www.reddit.com/r/")[1].split("/")[0]
-            return thread_name
+            # Handle both www.reddit.com and old.reddit.com
+            if "reddit.com/r/" in url:
+                thread_name = url.split("reddit.com/r/")[1].split("/")[0]
+                return thread_name
         except:
             pass
 
         return None
 
+    def check_for_captcha(self):
+        page_source = self.driver.page_source.lower()
+        # Look for actual captcha challenge, not just the word in forms
+        if ("challenge" in page_source and "captcha" in page_source) or \
+           "you have been blocked" in page_source or \
+           "access denied" in page_source:
+            print("[!] CAPTCHA or block detected!")
+            return True
+        return False
+
     def get_post_content(self, post_link):
         print("Starting to scrape post:", post_link)
         scrape_start_time = time.time()
         print("Getting to page...")
-        self.driver.get(post_link)
-        time.sleep(5)
 
-        try:
-            read_more_button = self.driver.find_element(
-                By.XPATH, "//button[contains(., 'Read more')]"
-            )
-            read_more_button.click()
-            time.sleep(1)  # Let the content expand
-        except:
-            pass
+        # Convert to old.reddit.com
+        post_link = post_link.replace("www.reddit.com", "old.reddit.com")
+        self.driver.get(post_link)
+        time.sleep(random.uniform(4, 8))
+
+        if self.check_for_captcha():
+            print(f"[!] CAPTCHA detected for {post_link}, skipping...")
+            return None
+
+        # old.reddit.com doesn't have "Read more" buttons in the same way
+        # Content is usually fully visible
 
         # repeatedly scrape content until we get all necessary data
         timeout = 10  # s
@@ -119,30 +144,35 @@ class RedditScraper:
         while time.time() - start_time < timeout:
             try:
                 if username is None:
+                    # old.reddit uses "a.author" instead of "a.author-name"
                     username = self.driver.find_element(
-                        By.CSS_SELECTOR, "a.author-name"
+                        By.CSS_SELECTOR, "a.author"
                     ).text
             except:
                 pass
 
             try:
                 if profile_img is None:
+                    # Try to get subreddit icon for old.reddit
                     profile_img = self.driver.find_element(
-                        By.CSS_SELECTOR, "img.shreddit-subreddit-icon__icon"
+                        By.CSS_SELECTOR, "img.icon"
                     )
             except:
                 pass
 
             try:
                 if content is None:
-                    content = self.driver.find_element(By.CSS_SELECTOR, "div.md").text
+                    # old.reddit post content is in div.expando > form > div.md
+                    # This avoids grabbing sidebar content
+                    content = self.driver.find_element(By.CSS_SELECTOR, "div.expando div.md").text
             except:
                 pass
 
             try:
                 if title is None:
+                    # old.reddit uses "a.title" for post titles
                     title = self.driver.find_element(
-                        By.CSS_SELECTOR, "h1[id^='post-title-']"
+                        By.CSS_SELECTOR, "a.title"
                     ).text
             except:
                 pass
@@ -220,7 +250,7 @@ class DataSaver:
                         data["url"],
                     )
                     posts.append(post)
-                    print(f"Loaded post {len(posts)} / {len(file_names)}", end="\r")
+        print(f"Loaded {len(posts)} posts from {self.data_folder_path}/")
         return posts
 
 
@@ -254,8 +284,12 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
             if posts_scraped >= posts_to_scrape:
                 break
             post = scraper.get_post_content(post_link)
-            data_saver.save_post_data(post)
-            posts_scraped += 1
+            if post is not None:
+                data_saver.save_post_data(post)
+                posts_scraped += 1
+            else:
+                print(f"[!] Skipping post due to captcha or error")
+                time.sleep(random.uniform(10, 20))
 
     except Exception as e:
         print(f"Error scraping thread {thread_url}: {e}")
@@ -268,7 +302,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
 
 
 def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
-    max_concurrent_threads = 5
+    max_concurrent_threads = 1
     active_threads = []
     remaining_threads = list(threads_to_scrape)
     random.shuffle(remaining_threads)
@@ -295,6 +329,9 @@ def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
                 )
                 t.start()
                 active_threads.append(t)
+
+                # Wait a bit before starting the next thread to avoid Chrome launch conflicts
+                time.sleep(random.uniform(3, 6))
             except Exception as e:
                 print(f"[!] Failed to start thread for {thread_url}: {e}")
 

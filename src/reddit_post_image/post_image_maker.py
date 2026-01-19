@@ -3,7 +3,7 @@ import requests
 from io import BytesIO
 import random
 import os
-from scraper import DataSaver
+from src.scraper.scraper import DataSaver
 import cv2
 
 # --- Constants ---

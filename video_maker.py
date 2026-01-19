@@ -1,15 +1,15 @@
 print(f"Importing modules...")
 
-from transcriber_local import Transcriber
-from scraper import DataSaver
-from narrarate import narrate
-from post_image_maker import make_reddit_post_image
-from caption_maker import extract_word_timestamps_from_transcript
+from src.transcription.transcriber_local import Transcriber
+from src.scraper.scraper import DataSaver
+from src.narration.narrarate import narrate
+from src.reddit_post_image.post_image_maker import make_reddit_post_image
+from src.video_editing.caption_maker import extract_word_timestamps_from_transcript
 
 
 import json
 import random
-from sludge_video_extractor import Extractor
+from src.sludge.sludge_video_extractor import Extractor
 from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip
 import os
 import stat
@@ -17,7 +17,7 @@ import pathlib
 import platform
 import subprocess
 
-from video_editing_functions import (
+from src.video_editing.video_editing_functions import (
     scroll_image,
     stack_videos_vertically,
     add_fade_background,
@@ -41,7 +41,7 @@ SUB_SLUDGE_VIDEO_DIMS = (
 
 class PostUsageHistory:
     def __init__(self):
-        self.fp = "post_usage_history.csv"
+        self.fp = "data/post_usage_history.csv"
 
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
@@ -113,6 +113,7 @@ def get_post_image(posts, expected_width):
 
 
 def cleanup_temp_files():
+    print("\n[CLEANUP] Starting temp file cleanup...")
     folders = [
         r"temp",
         r"narrations",
@@ -123,17 +124,23 @@ def cleanup_temp_files():
         folder = pathlib.Path(folder_path)
 
         if not folder.exists():
+            print(f"[CLEANUP] Folder does not exist: {folder_path}")
             continue
 
+        print(f"[CLEANUP] Cleaning folder: {folder_path}")
+        file_count = 0
         for item in folder.rglob("*"):  # recursively find all contents
             try:
                 if item.is_file():
+                    print(f"[CLEANUP] Deleting file: {item}")
                     make_deletable(item)
                     delete_file(item)
+                    file_count += 1
                 elif item.is_dir():
                     # Only delete empty directories after files are gone
                     try:
                         item.rmdir()
+                        print(f"[CLEANUP] Removed empty directory: {item}")
                     except OSError:
                         # Directory not empty (yet), will retry later
                         pass
@@ -145,8 +152,11 @@ def cleanup_temp_files():
             if item.is_dir():
                 try:
                     item.rmdir()
+                    print(f"[CLEANUP] Removed empty subdirectory: {item}")
                 except Exception:
                     pass  # still not empty, or permission issue
+
+        print(f"[CLEANUP] Deleted {file_count} files from {folder_path}")
 
 
 def make_deletable(file):
@@ -186,91 +196,110 @@ def delete_file(file):
 
 
 def create_stacked_reddit_scroll_video(output_dir):
+    print("\n" + "="*70)
+    print("STARTING NEW VIDEO CREATION")
+    print("="*70)
+
     temp_folder_name = r"temp"
+    print(f"\n[TEMP] Creating temp folder: {os.path.abspath(temp_folder_name)}")
     os.makedirs(temp_folder_name, exist_ok=True)
     cleanup_temp_files()
 
     # get scraped post data
-    print(f"[1] Getting saved scraped reddit data...")
+    print(f"\n[1] Getting saved scraped reddit data...")
     reddit_data_manager = DataSaver()
     posts = reddit_data_manager.get_all_posts()
+    print(f"[1] Loaded {len(posts)} posts from reddit_data/")
 
     # create the static reddit post
-    print(f"[2] Creating the static reddit post image...")
+    print(f"\n[2] Creating the static reddit post image...")
     post_image_save_path, post_data = get_post_image(
         posts, expected_width=VIDEO_DIMS[0]
     )
     if post_image_save_path in [False, None]:
         print(
-            """[!] Fatal error: Could not create a reddit 
+            """[!] Fatal error: Could not create a reddit
             post image in the given amount of tries."""
         )
         return False
+    print(f"[2] Created post image: {os.path.abspath(post_image_save_path)}")
+    print(f"[2] Post title: {post_data['title'][:60]}...")
 
     # make a narration of this post
     post_title = post_data["title"]
     post_text = post_data["content"]
     narration_content = f"{post_title}. {post_text}"
 
+    print(f"\n[2.5] Generating narration audio...")
     narration_audio_file_path, narration_duration = narrate(
         "jf_alpha", narration_content
     )
+    print(f"[2.5] Created narration: {os.path.abspath(narration_audio_file_path)}")
+    print(f"[2.5] Narration duration: {narration_duration}s")
 
     # make that a scrolling video
-    print(f"[3] Converting the post image to a scrolling video...")
+    print(f"\n[3] Converting the post image to a scrolling video...")
     scrolling_reddit_post_video_path = r"temp/reddit_post_scrolling_video.mp4"
+    print(f"[3] Output will be: {os.path.abspath(scrolling_reddit_post_video_path)}")
     scroll_image(
         image_path=post_image_save_path,
         out_video_path=scrolling_reddit_post_video_path,
         scroll_duration=narration_duration,
         height=SCROLLING_REDDIT_POST_HEIGHT,
     )
-   
+    print(f"[3] Created scrolling video: {os.path.abspath(scrolling_reddit_post_video_path)}")
 
     # craft the sub sludge video (subway
     # surfers, minecraft parkour, whatever)
-    print(f"[4] Crafting a sub sludge video...")
+    print(f"\n[4] Crafting a sub sludge video...")
     sub_sludge_extractor = Extractor()
     sub_sludge_video_path = r"temp/sub_sludge_video.mp4"
+    print(f"[4] Output will be: {os.path.abspath(sub_sludge_video_path)}")
     sub_sludge_extractor.get_random_sludge_video(
         narration_duration, sub_sludge_video_path, SUB_SLUDGE_VIDEO_DIMS
     )
-  
+    print(f"[4] Created sludge video: {os.path.abspath(sub_sludge_video_path)}")
 
     # put the videos on top of eachother
-    print(f"[5] Creating stacked video...")
+    print(f"\n[5] Creating stacked video...")
     stacked_video_path = r"temp/stacked_video.mp4"
+    print(f"[5] Output will be: {os.path.abspath(stacked_video_path)}")
     stack_videos_vertically(
         scrolling_reddit_post_video_path, sub_sludge_video_path, stacked_video_path
     )
+    print(f"[5] Created stacked video: {os.path.abspath(stacked_video_path)}")
 
     # add fadebackground with pad
-    print(f'[6] Adding the faded background...')
+    print(f"\n[6] Adding the faded background...")
     stacked_video_with_background_path = r"temp/stacked_video_with_background.mp4"
+    print(f"[6] Output will be: {os.path.abspath(stacked_video_with_background_path)}")
     add_fade_background(
         stacked_video_path, sub_sludge_video_path, stacked_video_with_background_path
     )
+    print(f"[6] Created video with background: {os.path.abspath(stacked_video_with_background_path)}")
 
     # narrate that stacked video
-    print(f"[7] Adding narration to the stacked video...")
+    print(f"\n[7] Adding narration to the stacked video...")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+        print(f"[7] Created output directory: {os.path.abspath(output_dir)}")
     video_index = len(os.listdir(output_dir))
     narrated_video_path = f"{output_dir}/{video_index}.mp4"
+    print(f"[7] Final video will be: {os.path.abspath(narrated_video_path)}")
     add_audio_to_video(
         video_path=stacked_video_with_background_path,
         audio_path=narration_audio_file_path,
         out_video_path=narrated_video_path,
     )
-    
-    
-    print(f"Created a sludge video at {narrated_video_path}")
+
+    print(f"\n[SUCCESS] Created sludge video at: {os.path.abspath(narrated_video_path)}")
     cleanup_temp_files()
-    return narrated_video_path, narration_content
+    return narrated_video_path, post_data
 
 
-def create_metadata(content):
-    return {"placeholder": "content"}
+def create_metadata(post_title, post_content):
+    from src.metadata.metadata_generator import generate_metadata
+    return generate_metadata(post_title, post_content)
 
 
 def compile_video_and_metadata(video_path, metadata_dict, output_folder):
@@ -278,25 +307,33 @@ def compile_video_and_metadata(video_path, metadata_dict, output_folder):
         print(f"Fatal error: This metadata is not valid: {metadata_dict}")
         return False
 
+    print(f"\n[FINAL] Compiling video into final_vids structure...")
     this_output_index = len(os.listdir(output_folder))
     subfolder_name = f"video_{this_output_index}"
     subfolder_path = os.path.join(output_folder, subfolder_name)
     os.makedirs(subfolder_path, exist_ok=True)
+    print(f"[FINAL] Created subfolder: {os.path.abspath(subfolder_path)}")
 
     # move that vid to the subfolder
     new_video_path = os.path.join(subfolder_path, "video.mp4")
+    print(f"[FINAL] Moving video from {os.path.abspath(video_path)}")
+    print(f"[FINAL]              to {os.path.abspath(new_video_path)}")
     os.rename(video_path, new_video_path)
 
     # metadata moving
     metadata_file_path = os.path.join(subfolder_path, "metadata.json")
+    print(f"[FINAL] Writing metadata to: {os.path.abspath(metadata_file_path)}")
     with open(metadata_file_path, "w") as f:
         json.dump(metadata_dict, f, indent=4)
 
+    print(f"[FINAL] Compilation complete! Video ready at: {os.path.abspath(subfolder_path)}")
+    print("="*70 + "\n")
 
-from video_editing_functions import (
+
+from src.video_editing.video_editing_functions import (
     caption_video,
 )
-from caption_maker import (
+from src.video_editing.caption_maker import (
     generate_caption_frames,
 )
 
@@ -371,15 +408,21 @@ def create_slop_with_captions_video():
 
 
 # main entry point functions
-def create_all_stacked_reddit_scroll_videos(output_dir="final_vids"):
-    while 1:
+def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=None):
+    while True:
+        if stop_flag and stop_flag.is_set():
+            print("[!] Stop flag detected, stopping video generation...")
+            break
         try:
-            narrated_video_path, narration_content = create_stacked_reddit_scroll_video(
+            narrated_video_path, post_data = create_stacked_reddit_scroll_video(
                 output_dir
             )
-            metadata_dict = create_metadata(narration_content)
+            if stop_flag and stop_flag.is_set():
+                break
+            metadata_dict = create_metadata(post_data["title"], post_data["content"])
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
-        except:
+        except Exception as e:
+            print(f"[!] Error creating video: {e}")
             pass
 
 
