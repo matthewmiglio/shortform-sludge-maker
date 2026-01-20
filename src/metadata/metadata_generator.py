@@ -96,8 +96,14 @@ def _clean_output(text: str, is_description: bool = False) -> str:
     text = re.sub(r'\nHashtags?:\s*', '\n', text, flags=re.IGNORECASE)
     # Remove text within brackets [like this]
     text = re.sub(r'\[[^\]]*\]', '', text)
-    # Remove escaped quotes \"
-    text = text.replace('\\"', '')
+    # Replace escaped quotes \" with space
+    text = text.replace('\\"', ' ')
+    # Replace quote-newline-quote pattern with single space (joined quoted strings)
+    text = re.sub(r'"\s*\n\s*"', ' ', text)
+    # Replace adjacent quotes "" with space
+    text = re.sub(r'"\s*"', ' ', text)
+    # Remove any remaining standalone quotes
+    text = text.replace('"', '')
 
     if is_description:
         # Preserve newlines for description formatting but clean up extra whitespace
