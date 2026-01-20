@@ -94,6 +94,10 @@ def _clean_output(text: str, is_description: bool = False) -> str:
     # Remove "Hook:" and "Hashtags:" labels
     text = re.sub(r'^Hook:\s*', '', text, flags=re.IGNORECASE | re.MULTILINE)
     text = re.sub(r'\nHashtags?:\s*', '\n', text, flags=re.IGNORECASE)
+    # Remove text within brackets [like this]
+    text = re.sub(r'\[[^\]]*\]', '', text)
+    # Remove escaped quotes \"
+    text = text.replace('\\"', '')
 
     if is_description:
         # Preserve newlines for description formatting but clean up extra whitespace

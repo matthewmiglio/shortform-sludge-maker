@@ -38,7 +38,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Slop Media Machine")
-        self.geometry("800x600")
+        self.geometry("850x700")
         self.configure(bg="#1e1e1e")
 
         # Global stop flag for all operations
@@ -196,6 +196,7 @@ class App(tk.Tk):
     def refresh_stats(self):
         scraped_posts_folder = r"reddit_data"
         final_videos_folder = r"final_vids"
+        youtube_history_file = r"data/youtube_post_history.csv"
 
         scraped_posts_count = (
             len(os.listdir(scraped_posts_folder))
@@ -207,12 +208,19 @@ class App(tk.Tk):
             if os.path.exists(final_videos_folder)
             else 0
         )
+        youtube_uploads_count = 0
+        if os.path.exists(youtube_history_file):
+            with open(youtube_history_file, "r") as f:
+                content = f.read().strip()
+                if content:
+                    youtube_uploads_count = len(content.split(","))
 
         self.stats["posts_scraped"] = scraped_posts_count
         self.stats["videos_created"] = final_videos_count
+        self.stats["youtube_uploads"] = youtube_uploads_count
 
         self.stats_bar.config(
-            text=f"Posts Scraped: {self.stats['posts_scraped']} | Videos Made: {self.stats['videos_created']}"
+            text=f"Posts Scraped: {self.stats['posts_scraped']} | Videos Made: {self.stats['videos_created']} | YouTube Uploads: {self.stats['youtube_uploads']}"
         )
 
         self.after(10000, self.refresh_stats)
@@ -514,7 +522,7 @@ class UploadTab(tk.Frame):
             print(f"Title: {self.metadata['title']}")
             print(f"Description: {self.metadata['description'][:100]}...")
 
-            self.title_label.config(text=f"Title:\n{self.metadata['title']}")
+            self.title_label.config(text=f"[{self.selected_subfolder}]\n\nTitle:\n{self.metadata['title']}")
             self.description_label.config(
                 text=f"\nDescription:\n{self.metadata['description']}"
             )
