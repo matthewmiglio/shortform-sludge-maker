@@ -53,11 +53,19 @@ class RedditScraper:
         self.saver = DataSaver()
         self.stop_flag = stop_flag
 
+    def check_if_blocked(self):
+        """Check if blocked by Reddit and raise exception if so."""
+        if "You've been blocked by network security" in self.driver.page_source:
+            raise Exception("BLOCKED: 'You've been blocked by network security'")
+
     def get_posts(self, thread_link, max_posts=50, scroll_pause=0.2, max_scrolls=200):
         # Convert to old.reddit.com to avoid captchas
         thread_link = thread_link.replace("www.reddit.com", "old.reddit.com")
         self.driver.get(thread_link)
         time.sleep(random.uniform(3, 7))
+
+        # Check if blocked and pause if so
+        self.check_if_blocked()
 
         post_links = set()
         scrolls = 0
@@ -260,7 +268,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
     data_saver = DataSaver()
 
     try:
-        if stop_flag.is_set():
+        if stop_flag and stop_flag.is_set():
             print(f"[!] Stop flag set before starting {thread_url}")
             scraper.driver.quit()
             return
@@ -269,7 +277,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
             :posts_to_scrape
         ]
 
-        if stop_flag.is_set():
+        if stop_flag and stop_flag.is_set():
             print(f"[!] Stopping thread for {thread_url} after getting post links")
             scraper.driver.quit()
             return
@@ -277,7 +285,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
         random.shuffle(post_links)
 
         for post_link in post_links:
-            if stop_flag.is_set():
+            if stop_flag and stop_flag.is_set():
                 print(f"[!] Stopping thread for {thread_url}")
                 scraper.driver.quit()
                 return
@@ -311,7 +319,7 @@ def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
     print(f"Total subreddits to scrape: {len(remaining_threads)}")
 
     while remaining_threads or active_threads:
-        if stop_flag.is_set():
+        if stop_flag and stop_flag.is_set():
             print("Stop flag detected, waiting for active threads to finish...")
             break
 
@@ -358,4 +366,4 @@ if __name__ == "__main__":
         "https://www.reddit.com/r/karen/",
         "https://www.reddit.com/r/TalesFromRetail/",
     ]
-    scrape_all_threads(threads_to_scrape, 500)
+    scrape_all_threads(threads_to_scrape, 50, None)
