@@ -9,8 +9,6 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "pillow (>=11.3.0,<12.0.0)",
-    "matplotlib (>=3.10.3,<4.0.0)",
-    "ipython (>=9.4.0,<10.0.0)",
     "requests (>=2.32.4,<3.0.0)",
     "selenium (>=4.34.2,<5.0.0)",
     "webdriver-manager (>=4.0.2,<5.0.0)",
@@ -23,11 +21,7 @@ dependencies = [
     "soundfile (>=0.13.1,<0.14.0)",
     "moviepy (==1.0.3)",
     "opencv-python (>=4.12.0.88,<5.0.0.0)",
-    "openai (>=1.97.1,<2.0.0)",
-    "scipy (>=1.16.0,<2.0.0)",
     "faster-whisper (>=1.1.1,<2.0.0)",
-    "hf-xet (>=1.1.5,<2.0.0)",
-    "tiktoken (>=0.9.0,<0.10.0)",
     "google-auth (>=2.15,<2.42)",
     "google-api-python-client (>=2.187.0,<3.0.0)",
     "google-auth-oauthlib (==1.2.3)"
