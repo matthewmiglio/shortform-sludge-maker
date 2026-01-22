@@ -1,9 +1,6 @@
 import threading
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
 import time
 import json
 import os
@@ -36,18 +33,24 @@ class Post:
 
 class RedditScraper:
     def __init__(self, stop_flag=None):
-        chrome_options = Options()
+        chrome_options = uc.ChromeOptions()
 
-        # Use same options as test_scraper.py (proven to work)
+        # Anti-detection options
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--start-maximized")
-
-        # Single attempt initialization (no retry spam)
-        self.driver = webdriver.Chrome(
-            service=Service(ChromeDriverManager().install()),
-            options=chrome_options
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument(
+            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+
+        # Persistent profile for cookies
+        profile_dir = os.path.join(os.path.dirname(__file__), "..", "..", "selenium_profile")
+        os.makedirs(profile_dir, exist_ok=True)
+        chrome_options.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
+
+        # Use undetected-chromedriver
+        self.driver = uc.Chrome(options=chrome_options)
         print("Chrome driver initialized successfully")
 
         self.saver = DataSaver()
@@ -81,7 +84,7 @@ class RedditScraper:
             self.driver.execute_script(
                 "window.scrollTo(0, document.body.scrollHeight);"
             )
-            time.sleep(scroll_pause + random.uniform(0.1, 0.5))
+            time.sleep(scroll_pause + random.uniform(1.5, 4.0))
 
             # Look for new posts (old.reddit.com uses different selectors)
             posts = self.driver.find_elements(By.CSS_SELECTOR, "a.title")
@@ -136,7 +139,7 @@ class RedditScraper:
         # Convert to old.reddit.com
         post_link = post_link.replace("www.reddit.com", "old.reddit.com")
         self.driver.get(post_link)
-        time.sleep(random.uniform(4, 8))
+        time.sleep(random.uniform(8, 15))
 
         if self.check_for_captcha():
             print(f"[!] CAPTCHA detected for {post_link}, skipping...")
@@ -295,6 +298,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
             if post is not None:
                 data_saver.save_post_data(post)
                 posts_scraped += 1
+                time.sleep(random.uniform(10, 25))
             else:
                 print(f"[!] Skipping post due to captcha or error")
                 time.sleep(random.uniform(10, 20))

@@ -24,7 +24,8 @@ dependencies = [
     "faster-whisper (>=1.1.1,<2.0.0)",
     "google-auth (>=2.15,<2.42)",
     "google-api-python-client (>=2.187.0,<3.0.0)",
-    "google-auth-oauthlib (==1.2.3)"
+    "google-auth-oauthlib (==1.2.3)",
+    "undetected-chromedriver (>=3.5.0)"
 ]
 
 
