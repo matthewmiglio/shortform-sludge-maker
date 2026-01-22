@@ -283,13 +283,9 @@ def create_stacked_reddit_scroll_video(output_dir):
     )
     print(f"[6] Created video with background: {os.path.abspath(stacked_video_with_background_path)}")
 
-    # narrate that stacked video
+    # narrate that stacked video (save to temp first to avoid orphaned files)
     print(f"\n[7] Adding narration to the stacked video...")
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-        print(f"[7] Created output directory: {os.path.abspath(output_dir)}")
-    video_index = len(os.listdir(output_dir))
-    narrated_video_path = f"{output_dir}/{video_index}.mp4"
+    narrated_video_path = "temp/narrated_final_video.mp4"
     print(f"[7] Final video will be: {os.path.abspath(narrated_video_path)}")
     add_audio_to_video(
         video_path=stacked_video_with_background_path,
@@ -302,9 +298,14 @@ def create_stacked_reddit_scroll_video(output_dir):
     return narrated_video_path, post_data
 
 
-def create_metadata(post_title, post_content):
+def create_metadata(post_title, post_content, post_url=None):
     from src.metadata.metadata_generator import generate_metadata
-    return generate_metadata(post_title, post_content)
+    metadata = generate_metadata(post_title, post_content)
+    metadata["reddit_post_title"] = post_title
+    metadata["reddit_post_content"] = post_content
+    if post_url:
+        metadata["reddit_url"] = post_url
+    return metadata
 
 
 def compile_video_and_metadata(video_path, metadata_dict, output_folder):
@@ -424,7 +425,7 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             )
             if stop_flag and stop_flag.is_set():
                 break
-            metadata_dict = create_metadata(post_data["title"], post_data["content"])
+            metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
         except Exception as e:
             print(f"[!] Error creating video: {e}")

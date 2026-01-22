@@ -30,23 +30,29 @@ def _get_generator():
     return _generator
 
 
-TITLE_PROMPT = """Generate a catchy, attention-grabbing YouTube Shorts title (max 10 words) for this Reddit story. Make it emotional and dramatic. Only output the title, nothing else.
+TITLE_PROMPT = """Generate a YouTube Shorts title (max 10 words) for this Reddit story.
+IMPORTANT: The title MUST be in first-person using "I" or "My". Never use third-person.
+Good examples: "I Caught My Boss Lying", "My Neighbor Stole My Package", "I Finally Stood Up To My Mom"
+Bad examples: "Man Catches Boss Lying", "Neighbor Steals Package", "Person Stands Up To Mom"
 
 Reddit story:
 {text}
 
-Title:"""
+Title (first-person only):"""
 
-DESCRIPTION_PROMPT = """Write a YouTube Shorts description for this Reddit story with the following format:
-Hook: [1-2 engaging sentences that make viewers want to watch]
-Hashtags: [3-5 relevant hashtags]
+DESCRIPTION_PROMPT = """Write a YouTube Shorts description for this Reddit story.
+IMPORTANT: Write ONLY in first-person using "I", "My", "Me". Never use "you", "they", or third-person.
+Good example: "I never thought this would happen to me, but here I am sharing my story..."
+Bad example: "Ever had this happen to you? This person shares their story..."
 
-Only output in that exact format, nothing else.
+Format:
+Hook: [1-2 first-person sentences starting with "I"]
+Hashtags: [3-5 hashtags]
 
 Reddit story:
 {text}
 
-Description:"""
+Description (first-person only):"""
 
 
 def _format_prompt(prompt_template: str, text: str) -> str:
@@ -55,8 +61,27 @@ def _format_prompt(prompt_template: str, text: str) -> str:
     return f"<|im_start|>user\n{prompt_text}<|im_end|>\n<|im_start|>assistant\n"
 
 
+def _normalize_typography(text: str) -> str:
+    """Convert fancy typography to ASCII equivalents."""
+    replacements = {
+        '\u2019': "'",  # right single quote -> apostrophe
+        '\u2018': "'",  # left single quote -> apostrophe
+        '\u201c': '"',  # left double quote -> quote
+        '\u201d': '"',  # right double quote -> quote
+        '\u2014': '-',  # em dash -> hyphen
+        '\u2013': '-',  # en dash -> hyphen
+        '\u2026': '...',  # ellipsis -> three dots
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+    return text
+
+
 def _strip_emojis(text: str) -> str:
-    """Remove emojis and other non-ASCII special characters."""
+    """Remove emojis and surrogate pairs while preserving normal text."""
+    # First normalize typography
+    text = _normalize_typography(text)
+
     # Remove emoji unicode ranges
     emoji_pattern = re.compile(
         "["
@@ -71,6 +96,10 @@ def _strip_emojis(text: str) -> str:
         "\U0001FA70-\U0001FAFF"  # symbols extended
         "\U00002600-\U000026FF"  # misc symbols
         "\U00002700-\U000027BF"  # dingbats
+        "\U0001F000-\U0001F02F"  # mahjong tiles
+        "\U0001F0A0-\U0001F0FF"  # playing cards
+        "\ud800-\udfff"  # surrogate pairs (partial emojis)
+        "\uac00-\ud7af"  # Korean syllables
         "]+",
         flags=re.UNICODE,
     )

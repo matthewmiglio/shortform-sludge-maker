@@ -60,16 +60,16 @@ class YoutubePostHistoryManager:
         self.fp = r"data/youtube_post_history.csv"
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
-                f.write("video_folder_name1,video_folder_name2")
+                f.write("")
 
-    def add_post(self, video_folder_name):
+    def add_post(self, reddit_url):
         with open(self.fp, "a") as f:
-            f.write(f",{video_folder_name}")
+            f.write(f"{reddit_url}\n")
 
-    def post_exists(self, video_folder_name):
+    def post_exists(self, reddit_url):
         with open(self.fp, "r") as f:
             content = f.read()
-            return video_folder_name in content.split(",")
+            return reddit_url in content.split("\n")
 
 
 def extract_metadata_from_folder(video_subfolder_path):
@@ -82,7 +82,9 @@ def extract_metadata_from_folder(video_subfolder_path):
             )
             return False
 
-    return sanitize_metadata(metadata)
+    sanitized = sanitize_metadata(metadata)
+    sanitized["reddit_url"] = metadata.get("reddit_url", "")
+    return sanitized
 
 
 def sanitize_metadata(metadata):
@@ -143,40 +145,48 @@ def upload_from_final_vids():
     post_history_module = YoutubePostHistoryManager()
     videos_folder = r"final_vids"
     all_subfolders = os.listdir(videos_folder)
-    unposted_subfolders = [
-        f for f in all_subfolders if not post_history_module.post_exists(f)
-    ]
+
+    # filter to unposted videos by checking reddit_url in metadata
+    unposted_subfolders = []
+    for subfolder in all_subfolders:
+        subfolder_path = os.path.join(videos_folder, subfolder)
+        metadata = extract_metadata_from_folder(subfolder_path)
+        if metadata is False:
+            continue
+        reddit_url = metadata.get("reddit_url", "")
+        if reddit_url and not post_history_module.post_exists(reddit_url):
+            unposted_subfolders.append((subfolder, metadata))
+
     print(
         f"{len(unposted_subfolders)} of {len(all_subfolders)} videos have not been posted yet."
     )
 
+    if not unposted_subfolders:
+        print("[!] No unposted videos available.")
+        return False
+
     # select one to post
-    selected_subfolder = random.choice(unposted_subfolders)
+    selected_subfolder, metadata = random.choice(unposted_subfolders)
     selected_subfolder_path = os.path.join(videos_folder, selected_subfolder)
     video_path = os.path.join(selected_subfolder_path, "video.mp4")
 
-    # extract metadata
-    metadata = extract_metadata_from_folder(selected_subfolder_path)
-    if metadata is False:
-        print("[!] Fatal error: Cannot post due to failure to read post metadata")
-        return False
     title = metadata["title"]
     description = metadata["description"]
+    reddit_url = metadata.get("reddit_url", "")
 
     print(f"\nPOST METADATA HUMAN CHECK")
     print(f"Title: {title}")
     print(f"Description: {description}")
+    print(f"Reddit URL: {reddit_url}")
     input(f"Good to go? Press Enter to continue or Ctrl+C to cancel.")
 
     # upload it using the uploader
     uploader = YoutubeUploader()
-    video_title = title
-    video_description = description
-    video_file_path = video_path  # Replace with your video file path
-    uploader.upload_video(video_title, video_description, video_file_path)
+    uploader.upload_video(title, description, video_path)
 
-    # add to post history
-    post_history_module.add_post(selected_subfolder)
+    # add to post history by reddit url
+    if reddit_url:
+        post_history_module.add_post(reddit_url)
 
 
 if __name__ == "__main__":

@@ -489,9 +489,17 @@ class UploadTab(tk.Frame):
                 return
 
             all_subfolders = os.listdir(videos_folder)
-            unposted_subfolders = [
-                f for f in all_subfolders if not post_history_module.post_exists(f)
-            ]
+
+            # filter to unposted videos by checking reddit_url in metadata
+            unposted_subfolders = []
+            for subfolder in all_subfolders:
+                subfolder_path = os.path.join(videos_folder, subfolder)
+                metadata = extract_metadata_from_folder(subfolder_path)
+                if metadata is False:
+                    continue
+                reddit_url = metadata.get("reddit_url", "")
+                if reddit_url and not post_history_module.post_exists(reddit_url):
+                    unposted_subfolders.append((subfolder, metadata))
 
             if not unposted_subfolders:
                 self.status_label.config(text="No unposted videos found", fg="orange")
@@ -504,21 +512,11 @@ class UploadTab(tk.Frame):
             )
             print(f"Found {len(unposted_subfolders)} unposted videos out of {len(all_subfolders)} total")
 
-            self.selected_subfolder = random.choice(unposted_subfolders)
+            self.selected_subfolder, self.metadata = random.choice(unposted_subfolders)
             selected_subfolder_path = os.path.join(videos_folder, self.selected_subfolder)
             self.video_path = os.path.join(selected_subfolder_path, "video.mp4")
 
             print(f"Selected: {self.selected_subfolder}")
-
-            self.metadata = extract_metadata_from_folder(selected_subfolder_path)
-            if self.metadata is False:
-                self.status_label.config(
-                    text="Error: Cannot read metadata from video folder", fg="red"
-                )
-                self.upload_button.config(state="disabled")
-                print("ERROR: Cannot read metadata")
-                return
-
             print(f"Title: {self.metadata['title']}")
             print(f"Description: {self.metadata['description'][:100]}...")
 
@@ -553,8 +551,10 @@ class UploadTab(tk.Frame):
                     self.video_path,
                 )
 
-                post_history_module = YoutubePostHistoryManager()
-                post_history_module.add_post(self.selected_subfolder)
+                reddit_url = self.metadata.get("reddit_url", "")
+                if reddit_url:
+                    post_history_module = YoutubePostHistoryManager()
+                    post_history_module.add_post(reddit_url)
 
                 print("="*50)
                 print("UPLOAD COMPLETE")
