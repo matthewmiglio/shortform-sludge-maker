@@ -12,3 +12,4 @@ data/youtube_post_history.csv
 src/youtube/token.json
 src/youtube/client_secret.json
 .claude
+tests/debug_page.html
