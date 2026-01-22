@@ -4,6 +4,7 @@ from googleapiclient.http import MediaFileUpload
 import os
 import json
 import random
+import shutil
 
 
 class YoutubeUploader:
@@ -180,13 +181,21 @@ def upload_from_final_vids():
     print(f"Reddit URL: {reddit_url}")
     input(f"Good to go? Press Enter to continue or Ctrl+C to cancel.")
 
-    # upload it using the uploader
-    uploader = YoutubeUploader()
-    uploader.upload_video(title, description, video_path)
+    try:
+        # upload it using the uploader
+        uploader = YoutubeUploader()
+        uploader.upload_video(title, description, video_path)
 
-    # add to post history by reddit url
-    if reddit_url:
-        post_history_module.add_post(reddit_url)
+        # add to post history by reddit url
+        if reddit_url:
+            post_history_module.add_post(reddit_url)
+
+        # Delete the video folder after successful upload
+        shutil.rmtree(selected_subfolder_path)
+        print(f"Deleted uploaded video folder: {selected_subfolder}")
+    except Exception as e:
+        print(f"ERROR: Upload failed - {e}")
+        return False
 
 
 if __name__ == "__main__":

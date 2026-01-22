@@ -5,6 +5,7 @@ import random
 import os
 import sys
 import subprocess
+import shutil
 from io import StringIO
 
 from src.scraper.scraper import scrape_all_threads
@@ -555,6 +556,11 @@ class UploadTab(tk.Frame):
                 if reddit_url:
                     post_history_module = YoutubePostHistoryManager()
                     post_history_module.add_post(reddit_url)
+
+                # Delete the video folder after successful upload
+                selected_subfolder_path = os.path.join("final_vids", self.selected_subfolder)
+                shutil.rmtree(selected_subfolder_path)
+                print(f"Deleted uploaded video folder: {self.selected_subfolder}")
 
                 print("="*50)
                 print("UPLOAD COMPLETE")

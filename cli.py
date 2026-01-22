@@ -7,6 +7,7 @@ Provides the same operations as the GUI but via command line.
 import argparse
 import os
 import random
+import shutil
 import sys
 import threading
 import subprocess
@@ -180,6 +181,10 @@ def cmd_upload(args):
 
         if reddit_url:
             post_history_module.add_post(reddit_url)
+
+        # Delete the video folder after successful upload
+        shutil.rmtree(selected_subfolder_path)
+        print(f"Deleted uploaded video folder: {selected_subfolder}")
 
         print("=" * 50)
         print("UPLOAD COMPLETE")
