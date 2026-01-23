@@ -249,7 +249,7 @@ class ScraperTab(tk.Frame):
             settings_frame, text="Posts per thread:", bg="#1e1e1e", fg="white"
         ).pack(side="left", padx=5)
 
-        self.thread_count = tk.IntVar(value=500)
+        self.thread_count = tk.IntVar(value=5)
         tk.Entry(settings_frame, textvariable=self.thread_count, width=10).pack(
             side="left", padx=5
         )

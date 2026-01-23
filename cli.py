@@ -106,10 +106,25 @@ def cmd_make(args):
     print("\n" + "=" * 50)
     print("STARTING VIDEO GENERATION")
     print("=" * 50)
+    if args.count:
+        print(f"Creating {args.count} videos...")
+    else:
+        print("Creating videos continuously (Ctrl+C to stop)...")
 
     stop_flag = threading.Event()
     try:
-        create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=stop_flag)
+        if args.count:
+            from video_maker import create_stacked_reddit_scroll_video, create_metadata, compile_video_and_metadata, cleanup_temp_files
+            for i in range(args.count):
+                if stop_flag.is_set():
+                    break
+                print(f"\n--- Video {i+1} of {args.count} ---")
+                narrated_video_path, post_data = create_stacked_reddit_scroll_video("final_vids")
+                metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+                compile_video_and_metadata(narrated_video_path, metadata_dict, "final_vids")
+                cleanup_temp_files()
+        else:
+            create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=stop_flag)
         print("=" * 50)
         print("VIDEO GENERATION COMPLETE")
         print("=" * 50 + "\n")
@@ -271,7 +286,7 @@ def main():
         epilog="""
 Examples:
   python cli.py stats              Show current stats
-  python cli.py scrape             Scrape Reddit (default 500 posts/thread)
+  python cli.py scrape             Scrape Reddit (default 5 posts/thread)
   python cli.py scrape -c 100      Scrape with 100 posts per thread
   python cli.py make               Generate videos continuously
   python cli.py list               List all videos and upload status
@@ -290,13 +305,17 @@ Examples:
     # scrape command
     scrape_parser = subparsers.add_parser("scrape", help="Scrape Reddit for content")
     scrape_parser.add_argument(
-        "-c", "--count", type=int, default=500,
-        help="Number of posts to scrape per thread (default: 500)"
+        "-c", "--count", type=int, default=5,
+        help="Number of posts to scrape per thread (default: 5)"
     )
     scrape_parser.set_defaults(func=cmd_scrape)
 
     # make command
     make_parser = subparsers.add_parser("make", help="Generate videos from scraped posts")
+    make_parser.add_argument(
+        "-c", "--count", type=int, default=None,
+        help="Number of videos to create (default: unlimited)"
+    )
     make_parser.set_defaults(func=cmd_make)
 
     # list command
