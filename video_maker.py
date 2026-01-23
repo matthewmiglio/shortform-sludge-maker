@@ -45,18 +45,15 @@ class PostUsageHistory:
 
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
-                f.write("example_post_url1,example_post_url2")
+                pass
 
     def add_post(self, post_url):
         with open(self.fp, "a") as f:
-            f.write(f",{post_url}")
+            f.write(f"{post_url}\n")
 
     def get_all_posts(self):
         with open(self.fp, "r") as f:
-            content = f.read().strip()
-            if not content:
-                return []
-            return content.split(",")
+            return [line.strip() for line in f if line.strip()]
 
     def post_exists(self, post_url):
         existing_posts = self.get_all_posts()
@@ -79,6 +76,10 @@ def get_post_image(posts, expected_width):
         random_post = random.choice(posts)
         post_data = random_post.to_dict()
 
+        # skip posts with empty content
+        if not post_data["content"].strip():
+            continue
+
         # if url has been used before, retry
         post_url = post_data["url"]
         post_usage_history = PostUsageHistory()
@@ -91,17 +92,14 @@ def get_post_image(posts, expected_width):
             thread=post_data["thread_name"],
             title_text=post_data["title"],
             body_text=post_data["content"],
-            profile_img_url=post_data["profile_img"],
-            subreddit_icon_url=SUBREDDIT_ICON_URL,
             username=post_data["username"],
             expected_width=expected_width,
+            subreddit_icon_url=SUBREDDIT_ICON_URL,
             save=True,
         )
 
         # if making the image didnt work, retry with another post
         if image_path is None:
-            # print(f"Failed to turn that into a post...")
-            post_usage_history.add_post(post_url)
             continue
 
         # successfully made the image from an unused post
@@ -294,7 +292,6 @@ def create_stacked_reddit_scroll_video(output_dir):
     )
 
     print(f"\n[SUCCESS] Created sludge video at: {os.path.abspath(narrated_video_path)}")
-    cleanup_temp_files()
     return narrated_video_path, post_data
 
 
@@ -420,16 +417,19 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             print("[!] Stop flag detected, stopping video generation...")
             break
         try:
-            narrated_video_path, post_data = create_stacked_reddit_scroll_video(
-                output_dir
-            )
+            result = create_stacked_reddit_scroll_video(output_dir)
+            if result is False:
+                print("[!] No more usable posts available. Stopping video generation.")
+                break
+            narrated_video_path, post_data = result
             if stop_flag and stop_flag.is_set():
                 break
             metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
+            cleanup_temp_files()
         except Exception as e:
             print(f"[!] Error creating video: {e}")
-            pass
+            break
 
 
 if __name__ == "__main__":

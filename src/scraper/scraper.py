@@ -5,6 +5,58 @@ import time
 import json
 import os
 import random
+import urllib.request
+
+
+OLLAMA_URL = "http://localhost:11434/api/generate"
+SCORING_MODEL = "gemma2:9b"
+SCORING_PROMPT = """Score this Reddit post for YouTube Shorts reposting potential.
+Output a JSON object with exactly these three integer fields (1-10 each):
+
+- "engagement": How controversial, dramatic, or attention-grabbing is this post? (1=boring/mundane, 10=extremely dramatic/spicy/hot-take)
+- "sentiment": How emotionally charged is the writing? (1=calm/neutral/measured, 10=outraged/furious/explosive)
+- "repost_quality": How much substantive first-person content is there to narrate in a video?
+  1-3: no real content (link-only, podcast promo, one-liner, health tip, TV recommendation, or pure spam)
+  4-5: very brief or vague personal content, or entirely second-hand/abstract
+  6-7: decent first-person content with personal details and some situation described
+  8-9: rich first-person narrative with detailed personal situation, conflict or drama, and emotional weight
+  10: exceptional story - detailed, dramatic, emotionally compelling, with clear stakes
+
+Output ONLY valid JSON, nothing else.
+
+Reddit post title: {title}
+Reddit post content: {content}"""
+
+MIN_ENGAGEMENT = 5
+MIN_REPOST_QUALITY = 6
+
+
+def score_post(title, content):
+    """Score a post using Ollama. Returns dict with scores or None on failure."""
+    prompt = SCORING_PROMPT.format(title=title, content=content[:1500])
+    payload = json.dumps({
+        "model": SCORING_MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json",
+        "options": {"num_gpu": 0},
+    }).encode("utf-8")
+
+    try:
+        req = urllib.request.Request(
+            OLLAMA_URL, data=payload, headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            result = json.loads(resp.read().decode("utf-8"))
+            scores = json.loads(result["response"])
+            return {
+                "engagement": max(1, min(10, int(scores.get("engagement", 5)))),
+                "sentiment": max(1, min(10, int(scores.get("sentiment", 5)))),
+                "repost_quality": max(1, min(10, int(scores.get("repost_quality", 5)))),
+            }
+    except Exception as e:
+        print(f"Scoring failed: {e}")
+        return None
 
 
 def decode_surrogates(s):
@@ -12,9 +64,8 @@ def decode_surrogates(s):
 
 
 class Post:
-    def __init__(self, username, profile_img, content, thread_name, title, url):
+    def __init__(self, username, content, thread_name, title, url):
         self.username = username
-        self.profile_img = profile_img
         self.content = content
         self.thread_name = thread_name
         self.title = title
@@ -23,7 +74,6 @@ class Post:
     def to_dict(self):
         return {
             "username": self.username,
-            "profile_img": self.profile_img,
             "content": self.content,
             "thread_name": self.thread_name,
             "title": self.title,
@@ -33,6 +83,7 @@ class Post:
 
 class RedditScraper:
     def __init__(self, stop_flag=None):
+        self._browser_pid = None
         chrome_options = uc.ChromeOptions()
 
         # Anti-detection options
@@ -40,21 +91,110 @@ class RedditScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_argument(
-            "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        )
 
-        # Persistent profile for cookies
-        profile_dir = os.path.join(os.path.dirname(__file__), "..", "..", "selenium_profile")
-        os.makedirs(profile_dir, exist_ok=True)
-        chrome_options.add_argument(f"--user-data-dir={os.path.abspath(profile_dir)}")
+        # Additional anti-detection
+        chrome_options.add_argument("--disable-infobars")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-gpu")
+        chrome_options.add_argument("--lang=en-US")
+        chrome_options.add_argument("--window-size=1920,1080")
 
-        # Use undetected-chromedriver
-        self.driver = uc.Chrome(options=chrome_options)
+        # Use undetected-chromedriver with version matching
+        # use_subprocess=True helps avoid detection
+        self.driver = uc.Chrome(options=chrome_options, version_main=143, use_subprocess=True)
+
+        # Store the browser PID for cleanup
+        self._browser_pid = None
+        self._service_pid = None
+        try:
+            self._browser_pid = self.driver.browser_pid
+            print(f"Browser PID: {self._browser_pid}")
+        except Exception as e:
+            print(f"[!] Could not get browser PID: {e}")
+        try:
+            # The service (chromedriver) PID is often more reliable
+            if hasattr(self.driver, 'service') and self.driver.service:
+                self._service_pid = self.driver.service.process.pid
+                print(f"Service PID: {self._service_pid}")
+        except Exception as e:
+            print(f"[!] Could not get service PID: {e}")
         print("Chrome driver initialized successfully")
+
+        # Execute CDP commands to further mask automation
+        self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+                Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']});
+                window.chrome = {runtime: {}};
+            """
+        })
+
+        # Warmup chain: Google → reddit.com → then subreddit
+        print("[0/4] Warming up browser...")
+        self.driver.get("https://www.google.com")
+        time.sleep(random.uniform(2, 4))
+
+        print("[0/4] Visiting reddit.com...")
+        self.driver.get("https://www.reddit.com")
+        time.sleep(random.uniform(3, 5))
 
         self.saver = DataSaver()
         self.stop_flag = stop_flag
+
+    def close(self):
+        """Clean up the browser."""
+        import subprocess
+        import sys
+
+        # Get the user-data-dir before quitting - we'll use it to find orphaned processes
+        user_data_dir = None
+        try:
+            for arg in self.driver.options.arguments:
+                if "--user-data-dir=" in arg:
+                    user_data_dir = arg.split("=", 1)[1]
+                    break
+        except:
+            pass
+
+        # Try to quit gracefully first
+        try:
+            self.driver.quit()
+            print("[!] driver.quit() completed")
+        except Exception as e:
+            print(f"[!] driver.quit() failed: {e}")
+
+        # Force kill by user-data-dir (most reliable for undetected_chromedriver)
+        if user_data_dir and sys.platform == "win32":
+            print(f"[!] Searching for Chrome with user-data-dir: {user_data_dir}")
+            try:
+                # Use PowerShell to find Chrome processes by command line
+                ps_cmd = f'''Get-CimInstance Win32_Process -Filter "name='chrome.exe'" | Where-Object {{ $_.CommandLine -like '*{user_data_dir.replace("'", "''")}*' }} | Select-Object -ExpandProperty ProcessId'''
+                result = subprocess.run(
+                    ["powershell", "-Command", ps_cmd],
+                    capture_output=True, text=True, timeout=15
+                )
+                pids = [p.strip() for p in result.stdout.strip().splitlines() if p.strip().isdigit()]
+                for pid in pids:
+                    print(f"[!] Killing Chrome PID {pid} (matched user-data-dir)")
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", pid],
+                                 capture_output=True, timeout=10)
+                if pids:
+                    print(f"[!] Killed {len(pids)} Chrome process(es)")
+            except Exception as e:
+                print(f"[!] PowerShell search failed: {e}")
+
+        # Fallback: kill by stored PIDs
+        for pid, name in [(self._service_pid, "service"), (self._browser_pid, "browser")]:
+            if pid:
+                try:
+                    if sys.platform == "win32":
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                                      capture_output=True, timeout=10)
+                except:
+                    pass
+
+        print("[!] Browser closed")
 
     def check_if_blocked(self):
         """Check if blocked by Reddit and raise exception if so."""
@@ -64,47 +204,81 @@ class RedditScraper:
     def get_posts(self, thread_link, max_posts=50, scroll_pause=0.2, max_scrolls=200):
         # Convert to old.reddit.com to avoid captchas
         thread_link = thread_link.replace("www.reddit.com", "old.reddit.com")
+        print(f"[1/4] Visiting subreddit: {thread_link}")
         self.driver.get(thread_link)
         time.sleep(random.uniform(3, 7))
 
         # Check if blocked and pause if so
         self.check_if_blocked()
+        print(f"[1/4] Successfully loaded subreddit page")
 
         post_links = set()
-        scrolls = 0
+        page_num = 1
 
-        last_height = self.driver.execute_script("return document.body.scrollHeight")
-
-        while len(post_links) < max_posts and scrolls < max_scrolls:
+        while len(post_links) < max_posts:
             if self.stop_flag and self.stop_flag.is_set():
-                print(f"[!] Stop flag detected during scroll in {thread_link}")
+                print(f"[!] Stop flag detected during scrape in {thread_link}")
                 return list(post_links)
 
-            # Scroll to bottom with random delay
-            self.driver.execute_script(
-                "window.scrollTo(0, document.body.scrollHeight);"
-            )
-            time.sleep(scroll_pause + random.uniform(1.5, 4.0))
+            # Scroll down the page to load any lazy content
+            last_height = self.driver.execute_script("return document.body.scrollHeight")
+            scroll_attempts = 0
+            max_scroll_attempts = 5
 
-            # Look for new posts (old.reddit.com uses different selectors)
+            while scroll_attempts < max_scroll_attempts:
+                self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(scroll_pause + random.uniform(1.5, 3.0))
+                new_height = self.driver.execute_script("return document.body.scrollHeight")
+                if new_height == last_height:
+                    break
+                last_height = new_height
+                scroll_attempts += 1
+
+            # Collect post links from current page
+            posts_before = len(post_links)
             posts = self.driver.find_elements(By.CSS_SELECTOR, "a.title")
             for post in posts:
                 href = post.get_attribute("href")
                 if href and "/comments/" in href:
                     if self.saver.data_exists(href):
-                        # print(f"Post {href} already exists, skipping...")
                         continue
                     post_links.add(href)
 
-            # Check if the scroll did anything
-            new_height = self.driver.execute_script("return document.body.scrollHeight")
-            if new_height == last_height:
-                break  # No more content
-            last_height = new_height
-            scrolls += 1
-            print(f"Scroll {scrolls}, collected {len(post_links)} links")
+            print(f"[2/4] Page {page_num}: found {len(post_links)} post links (+{len(post_links) - posts_before} new)")
 
-        print(f"Scraped a total of {len(post_links)} post links.")
+            # Check if we have enough posts
+            if len(post_links) >= max_posts:
+                break
+
+            # Try to find and click the "next" button for pagination
+            # Multiple selectors to handle different page layouts
+            next_url = None
+            next_selectors = [
+                ".next-button a",
+                "span.next-button a",
+                ".nav-buttons .next-button a",
+                "a[rel*='next']",
+            ]
+            for selector in next_selectors:
+                try:
+                    next_button = self.driver.find_element(By.CSS_SELECTOR, selector)
+                    next_url = next_button.get_attribute("href")
+                    if next_url:
+                        break
+                except:
+                    continue
+
+            if next_url:
+                print(f"Going to next page...")
+                self.driver.get(next_url)
+                time.sleep(random.uniform(3, 6))
+                self.check_if_blocked()
+                page_num += 1
+            else:
+                print("No next button found, done collecting links")
+                break
+
+        print(f"[2/4] Done collecting links: {len(post_links)} posts from {page_num} page(s)")
         return list(post_links)
 
     def url2thread_name(self, url):
@@ -132,9 +306,8 @@ class RedditScraper:
         return False
 
     def get_post_content(self, post_link):
-        print("Starting to scrape post:", post_link)
+        print(f"[3/4] Scraping post: {post_link}")
         scrape_start_time = time.time()
-        print("Getting to page...")
 
         # Convert to old.reddit.com
         post_link = post_link.replace("www.reddit.com", "old.reddit.com")
@@ -150,7 +323,7 @@ class RedditScraper:
 
         # repeatedly scrape content until we get all necessary data
         timeout = 10  # s
-        username, profile_img, content, title = None, None, None, None
+        username, content, title = None, None, None
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
@@ -159,15 +332,6 @@ class RedditScraper:
                     username = self.driver.find_element(
                         By.CSS_SELECTOR, "a.author"
                     ).text
-            except:
-                pass
-
-            try:
-                if profile_img is None:
-                    # Try to get subreddit icon for old.reddit
-                    profile_img = self.driver.find_element(
-                        By.CSS_SELECTOR, "img.icon"
-                    )
             except:
                 pass
 
@@ -189,18 +353,17 @@ class RedditScraper:
                 pass
 
             # if all data exists break
-            if None not in (username, profile_img, content, title):
+            if None not in (username, content, title):
                 break
 
         post = Post(
             username=username,
-            profile_img=profile_img.get_attribute("src") if profile_img else None,
             content=content,
             thread_name=self.url2thread_name(post_link),
             title=title,
             url=post_link,
         )
-        print(f"Scraped {post_link} in {time.time() - scrape_start_time:.2f}s!")
+        print(f"[3/4] Scraped post in {time.time() - scrape_start_time:.2f}s - title: {title[:50] if title else 'None'}...")
         return post
 
 
@@ -227,11 +390,28 @@ class DataSaver:
         post.content = decode_surrogates(post.content)
         post.title = decode_surrogates(post.title)
 
+        # skip posts with empty content
+        if not post.content.strip():
+            return
+
         # check if already exists
         url = post.url
         if self.data_exists(url):
-            # print(f"Post {url} already exists, skipping save.")
             return
+
+        # score the post before saving
+        print(f"[4/4] Scoring post...")
+        scores = score_post(post.title, post.content)
+        if scores:
+            eng = scores["engagement"]
+            rq = scores["repost_quality"]
+            print(f"[4/4] Scores: engagement={eng}, sentiment={scores['sentiment']}, repost_quality={rq}")
+            if eng < MIN_ENGAGEMENT or rq < MIN_REPOST_QUALITY:
+                print(f"[4/4] Skipping post (below threshold: engagement>={MIN_ENGAGEMENT}, repost_quality>={MIN_REPOST_QUALITY})")
+                return
+        else:
+            # if scoring fails, save anyway rather than lose the post
+            print("[4/4] Scoring unavailable, saving post without filtering.")
 
         data = post.to_dict()
         # make a uuid for this file name
@@ -242,7 +422,7 @@ class DataSaver:
         file_path = os.path.join(self.data_folder_path, file_name)
         with open(file_path, "w") as f:
             json.dump(data, f, indent=4)
-        print(f"Saved this post data. There are now ~{self.file_count} posts saved!")
+        print(f"[4/4] Saved! There are now ~{self.file_count} posts saved.")
 
     def get_all_posts(self):
         posts = []
@@ -254,7 +434,6 @@ class DataSaver:
                     data = json.load(f)
                     post = Post(
                         data["username"],
-                        data["profile_img"],
                         data["content"],
                         data["thread_name"],
                         data["title"],
@@ -267,13 +446,14 @@ class DataSaver:
 
 def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
     posts_scraped = 0
-    scraper = RedditScraper(stop_flag=stop_flag)
+    scraper = None
     data_saver = DataSaver()
 
     try:
+        scraper = RedditScraper(stop_flag=stop_flag)
         if stop_flag and stop_flag.is_set():
             print(f"[!] Stop flag set before starting {thread_url}")
-            scraper.driver.quit()
+            scraper.close()
             return
 
         post_links = scraper.get_posts(thread_url, max_posts=posts_to_scrape)[
@@ -282,7 +462,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
 
         if stop_flag and stop_flag.is_set():
             print(f"[!] Stopping thread for {thread_url} after getting post links")
-            scraper.driver.quit()
+            scraper.close()
             return
 
         random.shuffle(post_links)
@@ -290,7 +470,7 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
         for post_link in post_links:
             if stop_flag and stop_flag.is_set():
                 print(f"[!] Stopping thread for {thread_url}")
-                scraper.driver.quit()
+                scraper.close()
                 return
             if posts_scraped >= posts_to_scrape:
                 break
@@ -306,11 +486,11 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
     except Exception as e:
         print(f"Error scraping thread {thread_url}: {e}")
     finally:
-        try:
-            scraper.driver.quit()
-            print(f"[!] Browser closed for {thread_url}")
-        except:
-            pass
+        if scraper is not None:
+            try:
+                scraper.close()
+            except:
+                pass
 
 
 def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):

@@ -155,6 +155,9 @@ def upload_from_final_vids():
         if metadata is False:
             continue
         reddit_url = metadata.get("reddit_url", "")
+        reddit_content = metadata.get("reddit_post_content", "")
+        if not reddit_content.strip():
+            continue
         if reddit_url and not post_history_module.post_exists(reddit_url):
             unposted_subfolders.append((subfolder, metadata))
 

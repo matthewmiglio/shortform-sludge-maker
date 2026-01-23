@@ -83,7 +83,7 @@ def remove_emojis_from_text(text):
 def narrate(voice, text):
     text = remove_emojis_from_text(text)
 
-    output_folder = r"narrations"
+    output_folder = r"temp"
     os.makedirs(output_folder, exist_ok=True)
     this_audio_save_index = len(os.listdir(output_folder))
     files_in_dir = os.listdir(output_folder)
