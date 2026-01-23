@@ -80,23 +80,16 @@ def make_reddit_post_image(
     thread,
     title_text,
     body_text,
-    profile_img_url,
-    subreddit_icon_url,
     username,
     expected_width,
+    subreddit_icon_url=None,
     save=True,
+    save_path="temp",
 ):
-    if None in [
-        thread,
-        title_text,
-        body_text,
-        profile_img_url,
-        subreddit_icon_url,
-        username,
-    ]:
+    if None in [thread, title_text, body_text, username]:
         return None
 
-    BODY_TEXT_MAX_LENGTH = 900
+    BODY_TEXT_MAX_LENGTH = 1500
     BODY_TEXT_MIN_LENGTH = 300
     THREAD_NAME_MAX_LENGTH = 17
     USERNAME_MAX_LENGTH = 27
@@ -137,15 +130,14 @@ def make_reddit_post_image(
         pass
 
     # Draw profile avatar
-    try:
-        response = requests.get(profile_img_url)
-        avatar = Image.open(BytesIO(response.content)).convert("RGBA").resize((32, 32))
-        mask = Image.new("L", (32, 32), 0)
-        ImageDraw.Draw(mask).ellipse((0, 0, 32, 32), fill=255)
-        img.paste(avatar, (MARGIN, 60), mask)
-    except Exception as e:
-        # print("[!] Error: Failed to load profile image:", e)
-        return None
+    fallback_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "reddit_assets", "images", "pfp_bw.png")
+    avatar = Image.open(fallback_path).convert("RGBA").resize((32, 32), Image.LANCZOS)
+    # Composite avatar onto white background to eliminate black from transparency
+    avatar_bg = Image.new("RGBA", (32, 32), (255, 255, 255, 255))
+    avatar_bg.paste(avatar, (0, 0), avatar)
+    mask = Image.new("L", (32, 32), 0)
+    ImageDraw.Draw(mask).ellipse((0, 0, 32, 32), fill=255)
+    img.paste(avatar_bg, (MARGIN, 60), mask)
 
     # Draw username and timestamp
     draw.text(
@@ -190,7 +182,7 @@ def make_reddit_post_image(
     img = resize_image_keep_aspect_ratio(img, expected_width)
 
     if save:
-        image_saver = ImageSaver()
+        image_saver = ImageSaver(save_path=save_path)
         image_path = image_saver.save_image(
             img,
             thread,
@@ -240,13 +232,9 @@ def create_all_reddit_posts():
         thread = post["thread_name"]
         title_text = post["title"]
         body_text = post["content"]
-        profile_img_url = post["profile_img"]
-        subreddit_icon_url = (
-            "https://www.redditinc.com/assets/images/site/reddit-logo.png"
-        )
         username = post["username"]
         image = make_reddit_post_image(
-            thread, title_text, body_text, profile_img_url, subreddit_icon_url, username
+            thread, title_text, body_text, username, expected_width=360
         )
         if image is not None:
             image_path = image_saver.save_image(image, thread)
