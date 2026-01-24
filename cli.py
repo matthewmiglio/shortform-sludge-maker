@@ -69,8 +69,7 @@ def cmd_scrape(args):
     print("\n" + "=" * 50)
     print("STARTING REDDIT SCRAPER")
     print("=" * 50)
-    print(f"Scraping {len(SUBREDDITS)} subreddits...")
-    print(f"Posts per thread: {args.count}")
+    print(f"Total posts to scrape: {args.count}")
 
     stop_flag = threading.Event()
     try:
@@ -271,8 +270,8 @@ def main():
         epilog="""
 Examples:
   python cli.py stats              Show current stats
-  python cli.py scrape             Scrape Reddit (default 5 posts/thread)
-  python cli.py scrape -c 100      Scrape with 100 posts per thread
+  python cli.py scrape             Scrape Reddit (default 30 posts total)
+  python cli.py scrape -c 100      Scrape 100 posts total across all threads
   python cli.py make               Generate videos continuously
   python cli.py list               List all videos and upload status
   python cli.py upload             Select and upload the best-scored video
@@ -290,8 +289,8 @@ Examples:
     # scrape command
     scrape_parser = subparsers.add_parser("scrape", help="Scrape Reddit for content")
     scrape_parser.add_argument(
-        "-c", "--count", type=int, default=5,
-        help="Number of posts to scrape per thread (default: 5)"
+        "-c", "--count", type=int, default=30,
+        help="Total number of posts to scrape across all threads (default: 30)"
     )
     scrape_parser.set_defaults(func=cmd_scrape)
 

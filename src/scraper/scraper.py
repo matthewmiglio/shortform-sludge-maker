@@ -472,14 +472,16 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
                 pass
 
 
-def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
-    max_concurrent_threads = 1
+def scrape_all_threads(threads_to_scrape, total_posts: int, stop_flag):
     active_threads = []
     remaining_threads = list(threads_to_scrape)
     random.shuffle(remaining_threads)
 
-    print(f"Starting scraper with max {max_concurrent_threads} concurrent threads")
-    print(f"Total subreddits to scrape: {len(remaining_threads)}")
+    posts_per_thread = max(1, total_posts // len(remaining_threads))
+    threads_needed = min(len(remaining_threads), -(-total_posts // posts_per_thread))
+    remaining_threads = remaining_threads[:threads_needed]
+
+    print(f"Scraping {total_posts} total posts ({posts_per_thread}/thread across {threads_needed} threads)")
 
     while remaining_threads or active_threads:
         if stop_flag and stop_flag.is_set():
@@ -488,20 +490,18 @@ def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
 
         active_threads = [t for t in active_threads if t.is_alive()]
 
-        while len(active_threads) < max_concurrent_threads and remaining_threads:
+        while len(active_threads) < 1 and remaining_threads:
             thread_url = remaining_threads.pop(0)
             try:
-                print(f"\nStarting scraper thread for: {thread_url}")
-                print(f"Active threads: {len(active_threads) + 1}/{max_concurrent_threads}")
-                print(f"Remaining subreddits: {len(remaining_threads)}")
+                print(f"\nScraping: {thread_url} ({posts_per_thread} posts)")
+                print(f"Remaining: {len(remaining_threads)} threads")
 
                 t = threading.Thread(
-                    target=scrape_thread, args=(thread_url, posts_to_scrape, stop_flag)
+                    target=scrape_thread, args=(thread_url, posts_per_thread, stop_flag)
                 )
                 t.start()
                 active_threads.append(t)
 
-                # Wait a bit before starting the next thread to avoid Chrome launch conflicts
                 time.sleep(random.uniform(3, 6))
             except Exception as e:
                 print(f"[!] Failed to start thread for {thread_url}: {e}")
@@ -511,7 +511,7 @@ def scrape_all_threads(threads_to_scrape, posts_to_scrape: int, stop_flag):
     for t in active_threads:
         t.join()
 
-    print("\nAll scraping threads completed!")
+    print("\nAll scraping completed!")
     return active_threads
 
 

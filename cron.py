@@ -23,7 +23,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.scraper.scraper import scrape_thread, DataSaver
+from src.scraper.scraper import scrape_all_threads, DataSaver
 from video_maker import (
     create_stacked_reddit_scroll_video,
     create_metadata,
@@ -162,13 +162,12 @@ def count_unposted_videos():
 
 
 def run_scraper(logger):
-    """Scrape posts from a random subreddit."""
-    subreddit = random.choice(ALL_SUBREDDITS)
-    logger.log(f"[SCRAPER] Starting scrape of {subreddit}")
+    """Scrape posts distributed across all subreddits."""
+    logger.log(f"[SCRAPER] Starting scrape of {POSTS_TO_SCRAPE_PER_RUN} posts across all subreddits")
 
     try:
-        scrape_thread(subreddit, POSTS_TO_SCRAPE_PER_RUN, stop_flag)
-        logger.log(f"[SCRAPER] Completed scrape of {subreddit}")
+        scrape_all_threads(ALL_SUBREDDITS, POSTS_TO_SCRAPE_PER_RUN, stop_flag)
+        logger.log(f"[SCRAPER] Completed scrape run")
         return True
     except Exception as e:
         logger.log(f"[SCRAPER] Error: {e}")
