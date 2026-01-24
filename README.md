@@ -4,6 +4,7 @@ A comprehensive Python-powered toolkit for automated short-form content creation
 
 <img width="988" height="772" alt="image" src="https://github.com/user-attachments/assets/ba10748b-ad26-413f-99ed-0b58262a484d" />
 
+<img width="1637" height="588" alt="image" src="https://github.com/user-attachments/assets/0cba412b-022c-4a39-9542-f9122d55a692" />
 
 <img width="249" height="377" alt="image" src="https://github.com/user-attachments/assets/4b3f372b-6d7f-4dfb-b44d-175e226d5554" />
 <img width="254" height="380" alt="image" src="https://github.com/user-attachments/assets/98d48c65-a984-499c-bdb5-daee0e7f4e95" />
