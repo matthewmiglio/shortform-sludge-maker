@@ -340,31 +340,17 @@ class DataSaver:
         return False
 
     def save_post_data(self, post: Post):
-        # clean the post content before it gets written
+        """Save post to disk without scoring. Returns file path or None."""
         post.content = decode_surrogates(post.content)
         post.title = decode_surrogates(post.title)
 
-        # skip posts with empty content
         if not post.content.strip():
-            return
+            return None
 
-        # check if already exists
-        url = post.url
-        if self.data_exists(url):
-            return
-
-        # score the post before saving
-        print(f"[4/4] Scoring post...")
-        scores = score_post(post.title, post.content)
-        if scores:
-            print(f"[4/4] Scores: eng={scores['engagement']} sent={scores['sentiment']} rq={scores['repost_quality']} auth={scores['authenticity']} nc={scores['narrative_curiosity']}")
-        else:
-            print("[4/4] Scoring unavailable, saving without scores.")
+        if self.data_exists(post.url):
+            return None
 
         data = post.to_dict()
-        if scores:
-            data["scores"] = scores
-        # make a uuid for this file name
         file_name = (
             "".join(random.choices("abcdefghijklmnopqrstuvwxyz0123456789", k=20))
             + ".json"
@@ -372,7 +358,35 @@ class DataSaver:
         file_path = os.path.join(self.data_folder_path, file_name)
         with open(file_path, "w") as f:
             json.dump(data, f, indent=4)
-        print(f"[4/4] Saved! There are now ~{self.file_count} posts saved.")
+        return file_path
+
+    def score_batch(self, file_paths, min_content_length=300):
+        """Score a batch of saved posts and update their JSON files."""
+        print(f"\n[SCORING] Scoring batch of {len(file_paths)} posts...")
+        for i, fp in enumerate(file_paths, 1):
+            with open(fp, "r") as f:
+                data = json.load(f)
+            title = data.get("title", "")
+            content = data.get("content", "")
+            print(f"[SCORING] ({i}/{len(file_paths)}) {title[:50]}...")
+
+            if len(content) < min_content_length:
+                scores = {"engagement": 0, "sentiment": 0, "repost_quality": 0, "authenticity": 0, "narrative_curiosity": 0}
+                data["scores"] = scores
+                with open(fp, "w") as f:
+                    json.dump(data, f, indent=4)
+                print(f"[SCORING] ({i}/{len(file_paths)}) Too short ({len(content)} chars), auto-scored 0s")
+                continue
+
+            scores = score_post(title, content)
+            if scores:
+                data["scores"] = scores
+                with open(fp, "w") as f:
+                    json.dump(data, f, indent=4)
+                print(f"[SCORING] ({i}/{len(file_paths)}) eng={scores['engagement']} sent={scores['sentiment']} rq={scores['repost_quality']} auth={scores['authenticity']} nc={scores['narrative_curiosity']}")
+            else:
+                print(f"[SCORING] ({i}/{len(file_paths)}) Scoring failed, saved without scores.")
+        print(f"[SCORING] Batch complete. ~{self.file_count} posts saved total.")
 
     def get_all_posts(self):
         posts = []
@@ -418,21 +432,35 @@ def scrape_thread(thread_url, posts_to_scrape: int, stop_flag):
 
         random.shuffle(post_links)
 
+        batch_size = 5
+        batch_paths = []
+
         for post_link in post_links:
             if stop_flag and stop_flag.is_set():
                 print(f"[!] Stopping thread for {thread_url}")
-                scraper.close()
-                return
+                break
             if posts_scraped >= posts_to_scrape:
                 break
             post = scraper.get_post_content(post_link)
             if post is not None:
-                data_saver.save_post_data(post)
-                posts_scraped += 1
+                file_path = data_saver.save_post_data(post)
+                if file_path:
+                    batch_paths.append(file_path)
+                    posts_scraped += 1
+                    print(f"[3/4] Saved post ({posts_scraped}/{posts_to_scrape})")
                 time.sleep(random.uniform(10, 25))
+
+                # score in batches
+                if len(batch_paths) >= batch_size:
+                    data_saver.score_batch(batch_paths)
+                    batch_paths = []
             else:
                 print(f"[!] Skipping post due to captcha or error")
                 time.sleep(random.uniform(10, 20))
+
+        # score any remaining posts in the last partial batch
+        if batch_paths:
+            data_saver.score_batch(batch_paths)
 
     except Exception as e:
         print(f"Error scraping thread {thread_url}: {e}")

@@ -6,7 +6,6 @@ import os
 import sys
 import subprocess
 import shutil
-from io import StringIO
 
 from src.scraper.scraper import scrape_all_threads
 from video_maker import create_all_stacked_reddit_scroll_videos
@@ -17,19 +16,36 @@ from src.youtube.youtube_upload import (
 )
 
 
-class TextRedirector:
-    def __init__(self, text_widget, tag="stdout"):
-        self.text_widget = text_widget
+class ThreadAwareRedirector:
+    """Routes print output to the correct tab's terminal based on which thread is printing."""
+    def __init__(self, tag="stdout"):
         self.tag = tag
+        self._thread_terminals = {}
+        self._fallback_terminal = None
+        self._lock = threading.Lock()
+
+    def register_thread(self, terminal):
+        """Register current thread to write to a specific terminal."""
+        with self._lock:
+            self._thread_terminals[threading.current_thread().ident] = terminal
+
+    def set_fallback(self, terminal):
+        """Set the terminal used by the main thread / unregistered threads."""
+        self._fallback_terminal = terminal
 
     def write(self, text):
-        self.text_widget.after(0, self._write, text)
+        with self._lock:
+            terminal = self._thread_terminals.get(
+                threading.current_thread().ident, self._fallback_terminal
+            )
+        if terminal:
+            terminal.after(0, self._write, terminal, text)
 
-    def _write(self, text):
-        self.text_widget.configure(state="normal")
-        self.text_widget.insert(tk.END, text, (self.tag,))
-        self.text_widget.see(tk.END)
-        self.text_widget.configure(state="disabled")
+    def _write(self, terminal, text):
+        terminal.configure(state="normal")
+        terminal.insert(tk.END, text, (self.tag,))
+        terminal.see(tk.END)
+        terminal.configure(state="disabled")
 
     def flush(self):
         pass
@@ -44,6 +60,10 @@ class App(tk.Tk):
 
         # Global stop flag for all operations
         self.global_stop_flag = threading.Event()
+
+        # Thread-aware stdout/stderr redirectors
+        self.stdout_redirector = ThreadAwareRedirector("stdout")
+        self.stderr_redirector = ThreadAwareRedirector("stderr")
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -61,12 +81,6 @@ class App(tk.Tk):
             fg="white",
         )
         title_label.pack(pady=15)
-
-        main_container = tk.Frame(self, bg="#1e1e1e")
-        main_container.pack(fill="both", expand=True, padx=10, pady=5)
-
-        left_panel = tk.Frame(main_container, bg="#1e1e1e")
-        left_panel.pack(side="left", fill="both", expand=True)
 
         style = ttk.Style()
         style.theme_use("default")
@@ -88,8 +102,8 @@ class App(tk.Tk):
             foreground=[("selected", "white")],
         )
 
-        self.notebook = ttk.Notebook(left_panel)
-        self.notebook.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=5)
 
         self.scraper_tab = ScraperTab(self.notebook, self)
         self.video_tab = VideoTab(self.notebook, self)
@@ -99,80 +113,27 @@ class App(tk.Tk):
         self.notebook.add(self.video_tab, text="Make Videos")
         self.notebook.add(self.upload_tab, text="Post Videos")
 
-        right_panel = tk.Frame(main_container, bg="#1e1e1e")
-        right_panel.pack(side="right", fill="both", expand=True, padx=(10, 0))
-
-        terminal_label = tk.Label(
-            right_panel,
-            text="Terminal Output",
-            font=("Helvetica", 12, "bold"),
-            bg="#1e1e1e",
-            fg="white",
-        )
-        terminal_label.pack(pady=(0, 5))
-
-        self.terminal = scrolledtext.ScrolledText(
-            right_panel,
-            wrap=tk.WORD,
-            bg="#0d0d0d",
-            fg="#00ff00",
-            font=("Consolas", 9),
-            state="disabled",
-            relief="sunken",
-            borderwidth=2,
-        )
-        self.terminal.pack(fill="both", expand=True)
-
-        button_frame = tk.Frame(right_panel, bg="#1e1e1e")
-        button_frame.pack(pady=5)
-
-        tk.Button(
-            button_frame,
-            text="Clear Terminal",
-            command=self.clear_terminal,
-            bg="#555555",
-            fg="white",
-            width=15,
-        ).pack(side="left", padx=2)
-
-        tk.Button(
-            button_frame,
-            text="Copy Log",
-            command=self.copy_log,
-            bg="#555555",
-            fg="white",
-            width=15,
-        ).pack(side="left", padx=2)
-
         self.stats_bar = tk.Label(
             self, text="", bg="#2e2e2e", fg="lightgray", anchor="w", padx=10, pady=5
         )
         self.stats_bar.pack(side="bottom", fill="x")
 
-        sys.stdout = TextRedirector(self.terminal, "stdout")
-        sys.stderr = TextRedirector(self.terminal, "stderr")
+        # Route main thread prints to the active tab's terminal
+        self.stdout_redirector.set_fallback(self.scraper_tab.terminal)
+        self.stderr_redirector.set_fallback(self.scraper_tab.terminal)
+        sys.stdout = self.stdout_redirector
+        sys.stderr = self.stderr_redirector
 
-        self.terminal.tag_config("stdout", foreground="#00ff00")
-        self.terminal.tag_config("stderr", foreground="#ff0000")
-
-        self.log_to_terminal("Slop Media Machine initialized")
-        self.log_to_terminal("Ready to start operations")
+        # Update fallback terminal when switching tabs
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
 
         self.refresh_stats()
 
-    def log_to_terminal(self, message):
-        print(message)
-
-    def clear_terminal(self):
-        self.terminal.configure(state="normal")
-        self.terminal.delete(1.0, tk.END)
-        self.terminal.configure(state="disabled")
-
-    def copy_log(self):
-        log_content = self.terminal.get(1.0, tk.END)
-        self.clipboard_clear()
-        self.clipboard_append(log_content)
-        self.log_to_terminal("Log copied to clipboard")
+    def _on_tab_changed(self, event):
+        tab_index = self.notebook.index(self.notebook.select())
+        tabs = [self.scraper_tab, self.video_tab, self.upload_tab]
+        self.stdout_redirector.set_fallback(tabs[tab_index].terminal)
+        self.stderr_redirector.set_fallback(tabs[tab_index].terminal)
 
     def on_close(self):
         print("\nShutting down application...")
@@ -234,16 +195,19 @@ class ScraperTab(tk.Frame):
         self.scrape_thread = None
         self.stop_flag = threading.Event()
 
+        controls_frame = tk.Frame(self, bg="#1e1e1e")
+        controls_frame.pack(fill="x", pady=5)
+
         tk.Label(
-            self,
+            controls_frame,
             text="Scrape Reddit for storytelling content",
             bg="#1e1e1e",
             fg="gray",
             font=("Helvetica", 10),
-        ).pack(pady=10)
+        ).pack(pady=5)
 
-        settings_frame = tk.Frame(self, bg="#1e1e1e")
-        settings_frame.pack(pady=10)
+        settings_frame = tk.Frame(controls_frame, bg="#1e1e1e")
+        settings_frame.pack(pady=5)
 
         tk.Label(
             settings_frame, text="Posts per thread:", bg="#1e1e1e", fg="white"
@@ -254,8 +218,8 @@ class ScraperTab(tk.Frame):
             side="left", padx=5
         )
 
-        button_frame = tk.Frame(self, bg="#1e1e1e")
-        button_frame.pack(pady=20)
+        button_frame = tk.Frame(controls_frame, bg="#1e1e1e")
+        button_frame.pack(pady=5)
 
         tk.Button(
             button_frame,
@@ -276,12 +240,29 @@ class ScraperTab(tk.Frame):
         ).pack(side="left", padx=5)
 
         self.status_label = tk.Label(
-            self, text="", bg="#1e1e1e", fg="lightgreen", wraplength=300
+            controls_frame, text="", bg="#1e1e1e", fg="lightgreen", wraplength=400
         )
-        self.status_label.pack(pady=10, padx=20)
+        self.status_label.pack(pady=5)
+
+        # Terminal for this tab
+        self.terminal = scrolledtext.ScrolledText(
+            self,
+            wrap=tk.WORD,
+            bg="#0d0d0d",
+            fg="#00ff00",
+            font=("Consolas", 9),
+            state="disabled",
+            relief="sunken",
+            borderwidth=2,
+        )
+        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.terminal.tag_config("stdout", foreground="#00ff00")
+        self.terminal.tag_config("stderr", foreground="#ff0000")
 
     def start_scraper(self):
         def run():
+            self.controller.stdout_redirector.register_thread(self.terminal)
+            self.controller.stderr_redirector.register_thread(self.terminal)
             self.stop_flag.clear()
             self.status_label.config(text="Scraping started...", fg="yellow")
             print("\n" + "="*50)
@@ -330,16 +311,19 @@ class VideoTab(tk.Frame):
         self.controller = controller
         self.stop_flag = threading.Event()
 
+        controls_frame = tk.Frame(self, bg="#1e1e1e")
+        controls_frame.pack(fill="x", pady=5)
+
         tk.Label(
-            self,
+            controls_frame,
             text="Generate vertical videos from scraped posts",
             bg="#1e1e1e",
             fg="gray",
             font=("Helvetica", 10),
-        ).pack(pady=10)
+        ).pack(pady=5)
 
-        button_frame = tk.Frame(self, bg="#1e1e1e")
-        button_frame.pack(pady=20)
+        button_frame = tk.Frame(controls_frame, bg="#1e1e1e")
+        button_frame.pack(pady=10)
 
         tk.Button(
             button_frame,
@@ -364,12 +348,29 @@ class VideoTab(tk.Frame):
         ).pack(side="left", padx=5)
 
         self.status_label = tk.Label(
-            self, text="", bg="#1e1e1e", fg="lightgreen", wraplength=300
+            controls_frame, text="", bg="#1e1e1e", fg="lightgreen", wraplength=400
         )
-        self.status_label.pack(pady=10, padx=20)
+        self.status_label.pack(pady=5)
+
+        # Terminal for this tab
+        self.terminal = scrolledtext.ScrolledText(
+            self,
+            wrap=tk.WORD,
+            bg="#0d0d0d",
+            fg="#00ff00",
+            font=("Consolas", 9),
+            state="disabled",
+            relief="sunken",
+            borderwidth=2,
+        )
+        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.terminal.tag_config("stdout", foreground="#00ff00")
+        self.terminal.tag_config("stderr", foreground="#ff0000")
 
     def start_generation(self):
         def run():
+            self.controller.stdout_redirector.register_thread(self.terminal)
+            self.controller.stderr_redirector.register_thread(self.terminal)
             self.stop_flag.clear()
             self.status_label.config(text="Video generation started...", fg="yellow")
             print("\n" + "="*50)
@@ -401,84 +402,82 @@ class UploadTab(tk.Frame):
         self.video_path = None
         self.selected_subfolder = None
 
+        controls_frame = tk.Frame(self, bg="#1e1e1e")
+        controls_frame.pack(fill="x", pady=5)
+
         tk.Label(
-            self,
+            controls_frame,
             text="Upload videos to YouTube",
             bg="#1e1e1e",
             fg="gray",
             font=("Helvetica", 10),
-        ).pack(pady=10)
+        ).pack(pady=5)
+
+        top_buttons = tk.Frame(controls_frame, bg="#1e1e1e")
+        top_buttons.pack(pady=5)
 
         tk.Button(
-            self,
+            top_buttons,
             text="Select Random Unposted Video",
             command=self.select_video,
             width=25,
             bg="#9C27B0",
             fg="white",
-        ).pack(pady=10)
-
-        self.metadata_frame = tk.Frame(self, bg="#2e2e2e", relief="ridge", borderwidth=2)
-        self.metadata_frame.pack(pady=10, padx=20, fill="both", expand=True)
-
-        tk.Label(
-            self.metadata_frame,
-            text="Video Preview",
-            bg="#2e2e2e",
-            fg="lightgray",
-            font=("Helvetica", 10, "bold"),
-        ).pack(pady=5)
-
-        self.title_label = tk.Label(
-            self.metadata_frame,
-            text="No video selected",
-            bg="#2e2e2e",
-            fg="white",
-            wraplength=300,
-            justify="left",
-        )
-        self.title_label.pack(anchor="w", pady=5, padx=10)
-
-        self.description_label = tk.Label(
-            self.metadata_frame,
-            text="",
-            bg="#2e2e2e",
-            fg="lightgray",
-            wraplength=300,
-            justify="left",
-        )
-        self.description_label.pack(anchor="w", pady=5, padx=10)
+        ).pack(side="left", padx=5)
 
         self.upload_button = tk.Button(
-            self,
+            top_buttons,
             text="Confirm and Upload",
             command=self.upload_video,
             state="disabled",
-            width=25,
-            height=2,
+            width=20,
             bg="#4CAF50",
             fg="white",
-            font=("Helvetica", 12),
         )
-        self.upload_button.pack(pady=15)
+        self.upload_button.pack(side="left", padx=5)
 
         tk.Button(
-            self,
-            text="Reauthenticate YouTube",
+            top_buttons,
+            text="Reauthenticate",
             command=self.reauthenticate_youtube,
-            width=25,
+            width=15,
             bg="#FF5722",
             fg="white",
-        ).pack(pady=5)
+        ).pack(side="left", padx=5)
 
         self.status_label = tk.Label(
-            self, text="", bg="#1e1e1e", fg="lightgreen", wraplength=300
+            controls_frame, text="", bg="#1e1e1e", fg="lightgreen", wraplength=400
         )
-        self.status_label.pack(pady=10, padx=20)
+        self.status_label.pack(pady=5)
+
+        # Terminal for this tab
+        self.terminal = scrolledtext.ScrolledText(
+            self,
+            wrap=tk.WORD,
+            bg="#0d0d0d",
+            fg="#00ff00",
+            font=("Consolas", 9),
+            state="disabled",
+            relief="sunken",
+            borderwidth=2,
+        )
+        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.terminal.tag_config("stdout", foreground="#00ff00")
+        self.terminal.tag_config("stderr", foreground="#ff0000")
+
+    def log(self, message):
+        """Print to this tab's terminal directly (for main-thread calls)."""
+        self.terminal.after(0, self._log, message)
+
+    def _log(self, message):
+        self.terminal.configure(state="normal")
+        self.terminal.insert(tk.END, message + "\n", ("stdout",))
+        self.terminal.see(tk.END)
+        self.terminal.configure(state="disabled")
 
     def select_video(self):
         try:
-            print("\nSelecting random unposted video...")
+            self.log("Selecting random unposted video...")
             post_history_module = YoutubePostHistoryManager()
             videos_folder = r"final_vids"
 
@@ -486,7 +485,7 @@ class UploadTab(tk.Frame):
                 self.status_label.config(
                     text="Error: final_vids folder not found", fg="red"
                 )
-                print("ERROR: final_vids folder not found")
+                self.log("ERROR: final_vids folder not found")
                 return
 
             all_subfolders = os.listdir(videos_folder)
@@ -504,38 +503,36 @@ class UploadTab(tk.Frame):
 
             if not unposted_subfolders:
                 self.status_label.config(text="No unposted videos found", fg="orange")
-                print("No unposted videos found")
+                self.log("No unposted videos found")
                 return
 
             self.status_label.config(
                 text=f"{len(unposted_subfolders)} of {len(all_subfolders)} videos unposted",
                 fg="lightblue",
             )
-            print(f"Found {len(unposted_subfolders)} unposted videos out of {len(all_subfolders)} total")
+            self.log(f"Found {len(unposted_subfolders)} unposted videos out of {len(all_subfolders)} total")
 
             self.selected_subfolder, self.metadata = random.choice(unposted_subfolders)
             selected_subfolder_path = os.path.join(videos_folder, self.selected_subfolder)
             self.video_path = os.path.join(selected_subfolder_path, "video.mp4")
 
-            print(f"Selected: {self.selected_subfolder}")
-            print(f"Title: {self.metadata['title']}")
-            print(f"Description: {self.metadata['description'][:100]}...")
+            self.log(f"Selected: {self.selected_subfolder}")
+            self.log(f"Title: {self.metadata['title']}")
+            self.log(f"Description: {self.metadata['description']}")
 
-            self.title_label.config(text=f"[{self.selected_subfolder}]\n\nTitle:\n{self.metadata['title']}")
-            self.description_label.config(
-                text=f"\nDescription:\n{self.metadata['description']}"
-            )
             self.upload_button.config(state="normal")
             self.status_label.config(
                 text="Video selected. Review and confirm upload.", fg="lightgreen"
             )
 
         except Exception as e:
-            print(f"ERROR: {e}")
+            self.log(f"ERROR: {e}")
             self.status_label.config(text=f"Error: {e}", fg="red")
 
     def upload_video(self):
         def run():
+            self.controller.stdout_redirector.register_thread(self.terminal)
+            self.controller.stderr_redirector.register_thread(self.terminal)
             try:
                 self.status_label.config(text="Uploading to YouTube...", fg="yellow")
                 self.upload_button.config(state="disabled")
@@ -569,8 +566,6 @@ class UploadTab(tk.Frame):
                 self.status_label.config(
                     text="Video uploaded successfully!", fg="lightgreen"
                 )
-                self.title_label.config(text="No video selected")
-                self.description_label.config(text="")
                 self.metadata = None
                 self.video_path = None
                 self.selected_subfolder = None
@@ -584,6 +579,8 @@ class UploadTab(tk.Frame):
 
     def reauthenticate_youtube(self):
         def run():
+            self.controller.stdout_redirector.register_thread(self.terminal)
+            self.controller.stderr_redirector.register_thread(self.terminal)
             try:
                 self.status_label.config(text="Starting YouTube authentication...", fg="yellow")
                 print("\n" + "="*50)
