@@ -20,3 +20,4 @@ src/metadata/benchmark_guide.md
 src/metadata/fine_tuner_results.json
 src/metadata/post_scoring_results.json
 tests/test_static_reddit_post.png
+tests/test_narration.wav
