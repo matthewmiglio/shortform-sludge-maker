@@ -81,49 +81,7 @@ def get_video_duration(video_path):
     return duration
 
 
-def resize_video(video_path, output_path, width, height):
-    # Load the video
-    video = VideoFileClip(video_path)
-
-    try:
-        # Resize video
-        resized_video = video.resize(newsize=(width, height))
-
-        # Write the result
-        resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
-    finally:
-        video.close()
-
-    return output_path
-
-
-def make_blur_video(video_path, output_path, blur_amount):
-    # Ensure blur_amount is odd and >= 1 (required by cv2.GaussianBlur)
-    if blur_amount % 2 == 0:
-        blur_amount += 1
-    if blur_amount < 1:
-        blur_amount = 1
-
-    # Define a frame-blurring function using OpenCV
-    def blur_frame(frame):
-        return cv2.GaussianBlur(frame, (blur_amount, blur_amount), 0)
-
-    # Load the video and apply blur
-    video = VideoFileClip(video_path)
-
-    try:
-        blurred_video = video.fl_image(blur_frame)
-
-        # Write the result
-        blurred_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
-    finally:
-        video.close()
-
-    return output_path
-
-
 def get_video_dims(video_path):
-
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError(f"Cannot open video file: {video_path}")
@@ -135,87 +93,40 @@ def get_video_dims(video_path):
     return width, height
 
 
-def resize_video_keep_aspect_ratio(video_path, output_path, target_width):
-    # Load the video
-    video = VideoFileClip(video_path)
-
-    try:
-        # Calculate new height to preserve aspect ratio
-        aspect_ratio = video.h / video.w
-        target_height = int(target_width * aspect_ratio)
-
-        # Resize video
-        resized_video = video.resize(newsize=(target_width, target_height))
-
-        # Write the result
-        resized_video.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
-    finally:
-        video.close()
-
-    return output_path
-
-
-def paste_video_onto_video(
-    foreground_video, background_video, foreground_video_pad, output_path
-):
-    # Get original foreground width
-    foreground_width, _ = get_video_dims(foreground_video)
-    new_foreground_width = foreground_width - (foreground_video_pad * 2)
-
-    # Resize foreground while keeping aspect ratio
-    foreground_video_resized = resize_video_keep_aspect_ratio(
-        foreground_video, r"temp/foreground_resized.mp4", new_foreground_width
-    )
-
-    # Load background and foreground clips
-    background_clip = VideoFileClip(background_video)
-    foreground_clip = VideoFileClip(foreground_video_resized)
-
-    try:
-        # Center foreground on background
-        x_center = (background_clip.w - foreground_clip.w) // 2
-        y_center = (background_clip.h - foreground_clip.h) // 2
-        foreground_clip = foreground_clip.set_position((x_center, y_center))
-
-        # Match background duration to foreground
-        background_clip = background_clip.set_duration(foreground_clip.duration)
-
-        # Composite the two clips
-        final = CompositeVideoClip([background_clip, foreground_clip])
-        final = final.set_audio(foreground_clip.audio)  # foreground audio dominates
-
-        # Write to file
-        final.write_videofile(output_path, codec="libx264", audio_codec="aac", logger=None)
-    finally:
-        background_clip.close()
-        foreground_clip.close()
-
-    return output_path
-
-
 def add_fade_background(main_video, fade_video, output_path):
-    main_video_duration = get_video_duration(main_video)
-    fade_video_duration = get_video_duration(fade_video)
+    """
+    Single-pass ffmpeg: scales fade_video to full dims, blurs it,
+    then overlays the main_video (with padding) centered on top.
+    """
+    import subprocess
 
-    #durations must match
-    if main_video_duration != fade_video_duration:
-        print("[!] Fatal error: Main video and fade video durations do not match!")
-        return False
+    width, height = get_video_dims(main_video)
+    pad = 50
+    fg_width = width - (pad * 2)
+    fg_height = int(fg_width * (height / width))
+    blur_sigma = 35  # approximates 71x71 Gaussian kernel
+    overlay_x = (width - fg_width) // 2
+    overlay_y = (height - fg_height) // 2
 
-    # resize the background video to same dims are foreground video
-    full_background_dims = get_video_dims(main_video)
-    resized_backgrond_video_path = r"temp/resized_fade_video.mp4"
-    resize_video(
-        fade_video,
-        resized_backgrond_video_path,
-        full_background_dims[0],
-        full_background_dims[1],
+    filter_complex = (
+        f"[1:v]scale={width}:{height},gblur=sigma={blur_sigma}[bg];"
+        f"[0:v]scale={fg_width}:{fg_height}[fg];"
+        f"[bg][fg]overlay={overlay_x}:{overlay_y}"
     )
 
-    # fade that video
-    fade_video_background_clip_path = r"temp/fade_video_background_70.mp4"
-    make_blur_video(resized_backgrond_video_path, fade_video_background_clip_path, 70)
-    paste_video_onto_video(main_video, fade_video_background_clip_path, 50, output_path)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", main_video,
+        "-i", fade_video,
+        "-filter_complex", filter_complex,
+        "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+        "-an", output_path
+    ]
+
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[!] ffmpeg error in add_fade_background: {result.stderr[-300:]}")
+        return False
 
 
 def scroll_image(image_path, out_video_path, scroll_duration, height):
@@ -258,7 +169,7 @@ def render_caption_frame(
     frame_size: tuple,
     words: list[str],
     highlight_index: int,
-    font_path: str = r"reddit_assets\SourGummy-Bold.ttf",
+    font_path: str = r"fonts\SourGummy-Bold.ttf",
     max_line_length: int = 10,  # Wrap after this many characters
     save: bool = False,
 ) -> Image.Image:

@@ -12,9 +12,9 @@ MARGIN = 16
 LINE_SPACING = 6
 
 # Fonts
-FONT_TITLE = r"reddit_assets/fonts/Noto_Sans/static/NotoSans-Bold.ttf"
-FONT_BODY = r"reddit_assets/fonts/Noto_Sans/static/NotoSans-Regular.ttf"
-FONT_SEARCH = r"reddit_assets\fonts\Noto_Sans\static\NotoSans-SemiBold.ttf"
+FONT_TITLE = r"fonts/NotoSans-Bold.ttf"
+FONT_BODY = r"fonts/NotoSans-Regular.ttf"
+FONT_SEARCH = r"fonts/NotoSans-SemiBold.ttf"
 font_title = ImageFont.truetype(FONT_TITLE, size=18)
 font_body = ImageFont.truetype(FONT_BODY, size=14)
 font_search = ImageFont.truetype(FONT_SEARCH, size=12)
