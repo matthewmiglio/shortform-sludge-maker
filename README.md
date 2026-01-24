@@ -1,5 +1,5 @@
 # reddit-sludge-scraper
-A python - selenium powered scraping tool for farming sludge content from reddit
+A comprehensive Python-powered toolkit for automated short-form content creation from Reddit. Includes tools for scraping Reddit posts via Selenium, scoring and ranking posts for viral repost potential, generating engaging TikTok/YouTube Shorts-style videos with TTS and gameplay overlays, and uploading directly to YouTube via API integration.
 
 
 <img width="988" height="772" alt="image" src="https://github.com/user-attachments/assets/ba10748b-ad26-413f-99ed-0b58262a484d" />
