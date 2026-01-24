@@ -47,18 +47,8 @@ POSTS_TO_SCRAPE_PER_RUN = 15
 UPLOAD_INTERVAL_HOURS = 5
 LOOP_SLEEP_SECONDS = 60
 
-ALL_SUBREDDITS = [
-    "https://www.reddit.com/r/tifu/",
-    "https://www.reddit.com/r/AmItheAsshole/",
-    "https://www.reddit.com/r/pettyrevenge/",
-    "https://www.reddit.com/r/ProRevenge/",
-    "https://www.reddit.com/r/raisedbynarcissists/",
-    "https://www.reddit.com/r/confession/",
-    "https://www.reddit.com/r/offmychest/",
-    "https://www.reddit.com/r/MaliciousCompliance/",
-    "https://www.reddit.com/r/karen/",
-    "https://www.reddit.com/r/TalesFromRetail/",
-]
+with open("config/reddit_threads.json", "r") as f:
+    ALL_SUBREDDITS = json.load(f)
 
 # Global stop flag
 stop_flag = threading.Event()

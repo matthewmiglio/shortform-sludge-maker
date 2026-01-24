@@ -5,6 +5,7 @@ Provides the same operations as the GUI but via command line.
 """
 
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -19,24 +20,8 @@ from src.youtube.youtube_upload import (
     extract_metadata_from_folder,
 )
 
-
-SUBREDDITS = [
-    "https://www.reddit.com/r/tifu/",
-    "https://www.reddit.com/r/AmItheAsshole/",
-    "https://www.reddit.com/r/pettyrevenge/",
-    "https://www.reddit.com/r/ProRevenge/",
-    "https://www.reddit.com/r/raisedbynarcissists/",
-    "https://www.reddit.com/r/confession/",
-    "https://www.reddit.com/r/offmychest/",
-    "https://www.reddit.com/r/MaliciousCompliance/",
-    "https://www.reddit.com/r/karen/",
-    "https://www.reddit.com/r/TalesFromRetail/",
-    "https://www.reddit.com/r/dating/",
-    "https://www.reddit.com/r/dating_advice/",
-    "https://www.reddit.com/r/BreakUps/",
-    "https://www.reddit.com/r/TwoXChromosomes/",
-    "https://www.reddit.com/r/FemaleDatingStrategy/",
-]
+with open("config/reddit_threads.json", "r") as f:
+    SUBREDDITS = json.load(f)
 
 
 def get_stats():

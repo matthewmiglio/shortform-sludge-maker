@@ -2,12 +2,16 @@ import tkinter as tk
 from tkinter import ttk, scrolledtext
 import threading
 import random
+import json
 import os
 import sys
 import subprocess
 import shutil
 
 from src.scraper.scraper import scrape_all_threads
+
+with open("config/reddit_threads.json", "r") as f:
+    SUBREDDITS = json.load(f)
 from video_maker import create_all_stacked_reddit_scroll_videos
 from src.youtube.youtube_upload import (
     YoutubeUploader,
@@ -269,25 +273,8 @@ class ScraperTab(tk.Frame):
             print("STARTING REDDIT SCRAPER")
             print("="*50)
             try:
-                threads = [
-                    "https://www.reddit.com/r/tifu/",
-                    "https://www.reddit.com/r/AmItheAsshole/",
-                    "https://www.reddit.com/r/pettyrevenge/",
-                    "https://www.reddit.com/r/ProRevenge/",
-                    "https://www.reddit.com/r/raisedbynarcissists/",
-                    "https://www.reddit.com/r/confession/",
-                    "https://www.reddit.com/r/offmychest/",
-                    "https://www.reddit.com/r/MaliciousCompliance/",
-                    "https://www.reddit.com/r/karen/",
-                    "https://www.reddit.com/r/TalesFromRetail/",
-                    "https://www.reddit.com/r/dating/",
-                    "https://www.reddit.com/r/dating_advice/",
-                    "https://www.reddit.com/r/BreakUps/",
-                    "https://www.reddit.com/r/TwoXChromosomes/",
-                    "https://www.reddit.com/r/FemaleDatingStrategy/",
-                ]
-                print(f"Scraping {len(threads)} subreddits...")
-                scrape_all_threads(threads, self.thread_count.get(), self.stop_flag)
+                print(f"Scraping {len(SUBREDDITS)} subreddits...")
+                scrape_all_threads(SUBREDDITS, self.thread_count.get(), self.stop_flag)
                 print("="*50)
                 print("SCRAPING COMPLETE")
                 print("="*50 + "\n")
