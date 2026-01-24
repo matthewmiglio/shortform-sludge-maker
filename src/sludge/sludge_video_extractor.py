@@ -56,7 +56,8 @@ class Extractor:
 
     def get_random_sludge_video(self, target_duration, output_path, expected_dims):
         # grab a random base sludge video
-        all_videos = [f for f in os.listdir(self.videos_dir)]
+        video_extensions = (".mp4", ".avi", ".mkv", ".mov", ".webm")
+        all_videos = [f for f in os.listdir(self.videos_dir) if f.lower().endswith(video_extensions)]
         random_video = random.choice(all_videos)
         base_sludge_video_path = os.path.join(self.videos_dir, random_video)
 
