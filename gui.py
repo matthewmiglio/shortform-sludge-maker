@@ -259,9 +259,19 @@ class ScraperTab(tk.Frame):
             relief="sunken",
             borderwidth=2,
         )
-        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 2))
         self.terminal.tag_config("stdout", foreground="#00ff00")
         self.terminal.tag_config("stderr", foreground="#ff0000")
+
+        tk.Button(
+            self, text="Copy Log", command=self.copy_log,
+            bg="#555555", fg="white", width=10,
+        ).pack(pady=(0, 5))
+
+    def copy_log(self):
+        content = self.terminal.get(1.0, tk.END)
+        self.controller.clipboard_clear()
+        self.controller.clipboard_append(content)
 
     def start_scraper(self):
         def run():
@@ -350,9 +360,19 @@ class VideoTab(tk.Frame):
             relief="sunken",
             borderwidth=2,
         )
-        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
+        self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 2))
         self.terminal.tag_config("stdout", foreground="#00ff00")
         self.terminal.tag_config("stderr", foreground="#ff0000")
+
+        tk.Button(
+            self, text="Copy Log", command=self.copy_log,
+            bg="#555555", fg="white", width=10,
+        ).pack(pady=(0, 5))
+
+    def copy_log(self):
+        content = self.terminal.get(1.0, tk.END)
+        self.controller.clipboard_clear()
+        self.controller.clipboard_append(content)
 
     def start_generation(self):
         def run():
@@ -451,6 +471,16 @@ class UploadTab(tk.Frame):
         self.terminal.pack(fill="both", expand=True, padx=5, pady=(0, 5))
         self.terminal.tag_config("stdout", foreground="#00ff00")
         self.terminal.tag_config("stderr", foreground="#ff0000")
+
+        tk.Button(
+            self, text="Copy Log", command=self.copy_log,
+            bg="#555555", fg="white", width=10,
+        ).pack(pady=(0, 5))
+
+    def copy_log(self):
+        content = self.terminal.get(1.0, tk.END)
+        self.controller.clipboard_clear()
+        self.controller.clipboard_append(content)
 
     def log(self, message):
         """Print to this tab's terminal directly (for main-thread calls)."""
