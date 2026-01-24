@@ -7,6 +7,7 @@ import os
 import sys
 import subprocess
 import shutil
+from datetime import datetime
 
 from src.scraper.scraper import scrape_all_threads
 
@@ -20,6 +21,14 @@ from src.youtube.youtube_upload import (
 )
 
 
+def _timestamp():
+    now = datetime.now()
+    hour = now.hour % 12 or 12
+    minute = now.strftime("%M")
+    ampm = "am" if now.hour < 12 else "pm"
+    return f"[{hour}:{minute}{ampm}]"
+
+
 class ThreadAwareRedirector:
     """Routes print output to the correct tab's terminal based on which thread is printing."""
     def __init__(self, tag="stdout"):
@@ -27,6 +36,7 @@ class ThreadAwareRedirector:
         self._thread_terminals = {}
         self._fallback_terminal = None
         self._lock = threading.Lock()
+        self._at_line_start = {}
 
     def register_thread(self, terminal):
         """Register current thread to write to a specific terminal."""
@@ -46,8 +56,23 @@ class ThreadAwareRedirector:
             terminal.after(0, self._write, terminal, text)
 
     def _write(self, terminal, text):
+        if not text:
+            return
+        tid = id(terminal)
+        if tid not in self._at_line_start:
+            self._at_line_start[tid] = True
+
+        output = ""
+        for char in text:
+            if self._at_line_start[tid] and char not in ("\n", "\r"):
+                output += _timestamp() + " "
+                self._at_line_start[tid] = False
+            output += char
+            if char == "\n":
+                self._at_line_start[tid] = True
+
         terminal.configure(state="normal")
-        terminal.insert(tk.END, text, (self.tag,))
+        terminal.insert(tk.END, output, (self.tag,))
         terminal.see(tk.END)
         terminal.configure(state="disabled")
 
@@ -279,7 +304,7 @@ class ScraperTab(tk.Frame):
             self.controller.stderr_redirector.register_thread(self.terminal)
             self.stop_flag.clear()
             self.status_label.config(text="Scraping started...", fg="yellow")
-            print("\n" + "="*50)
+            print("="*50)
             print("STARTING REDDIT SCRAPER")
             print("="*50)
             try:
@@ -287,7 +312,7 @@ class ScraperTab(tk.Frame):
                 scrape_all_threads(SUBREDDITS, self.thread_count.get(), self.stop_flag)
                 print("="*50)
                 print("SCRAPING COMPLETE")
-                print("="*50 + "\n")
+                print("="*50)
                 self.status_label.config(text="Scraping complete or stopped.", fg="lightgreen")
             except Exception as e:
                 print(f"ERROR: {e}")
@@ -380,14 +405,14 @@ class VideoTab(tk.Frame):
             self.controller.stderr_redirector.register_thread(self.terminal)
             self.stop_flag.clear()
             self.status_label.config(text="Video generation started...", fg="yellow")
-            print("\n" + "="*50)
+            print("="*50)
             print("STARTING VIDEO GENERATION")
             print("="*50)
             try:
                 create_all_stacked_reddit_scroll_videos(output_dir=r"final_vids", stop_flag=self.stop_flag)
                 print("="*50)
                 print("VIDEO GENERATION STOPPED" if self.stop_flag.is_set() else "VIDEO GENERATION COMPLETE")
-                print("="*50 + "\n")
+                print("="*50)
                 self.status_label.config(text="Video generation stopped." if self.stop_flag.is_set() else "All videos created!", fg="lightgreen")
             except Exception as e:
                 print(f"ERROR: {e}")
@@ -488,7 +513,7 @@ class UploadTab(tk.Frame):
 
     def _log(self, message):
         self.terminal.configure(state="normal")
-        self.terminal.insert(tk.END, message + "\n", ("stdout",))
+        self.terminal.insert(tk.END, f"{_timestamp()} {message}\n", ("stdout",))
         self.terminal.see(tk.END)
         self.terminal.configure(state="disabled")
 
@@ -554,7 +579,7 @@ class UploadTab(tk.Frame):
                 self.status_label.config(text="Uploading to YouTube...", fg="yellow")
                 self.upload_button.config(state="disabled")
 
-                print("\n" + "="*50)
+                print("="*50)
                 print("UPLOADING VIDEO TO YOUTUBE")
                 print("="*50)
                 print(f"Video: {self.selected_subfolder}")
@@ -578,7 +603,7 @@ class UploadTab(tk.Frame):
 
                 print("="*50)
                 print("UPLOAD COMPLETE")
-                print("="*50 + "\n")
+                print("="*50)
 
                 self.status_label.config(
                     text="Video uploaded successfully!", fg="lightgreen"
@@ -600,7 +625,7 @@ class UploadTab(tk.Frame):
             self.controller.stderr_redirector.register_thread(self.terminal)
             try:
                 self.status_label.config(text="Starting YouTube authentication...", fg="yellow")
-                print("\n" + "="*50)
+                print("="*50)
                 print("STARTING YOUTUBE REAUTHENTICATION")
                 print("="*50)
                 print("A browser window will open for authentication...")
@@ -618,7 +643,7 @@ class UploadTab(tk.Frame):
                     print(result.stdout)
                     print("="*50)
                     print("AUTHENTICATION COMPLETE")
-                    print("="*50 + "\n")
+                    print("="*50)
                     self.status_label.config(
                         text="YouTube reauthentication successful!", fg="lightgreen"
                     )
@@ -627,7 +652,7 @@ class UploadTab(tk.Frame):
                     print(f"STDERR: {result.stderr}")
                     print("="*50)
                     print("AUTHENTICATION FAILED")
-                    print("="*50 + "\n")
+                    print("="*50)
                     self.status_label.config(
                         text=f"Authentication failed: {result.stderr[:100]}", fg="red"
                     )
