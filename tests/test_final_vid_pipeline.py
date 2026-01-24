@@ -90,9 +90,15 @@ def main():
                     result_data["post"]["content"],
                     result_data["post"].get("url"),
                 )
+                from src.metadata.scoring import score_post
+                scores = score_post(result_data["post"]["title"], result_data["post"]["content"])
+                if scores:
+                    result_data["metadata"]["engagement"] = scores["engagement"]
+                    result_data["metadata"]["sentiment"] = scores["sentiment"]
+                    result_data["metadata"]["repost_quality"] = scores["repost_quality"]
             finally:
                 sys.stdout = real_stdout
-        run_step("Generate metadata", gen_metadata)
+        run_step("Generate metadata + scores", gen_metadata)
 
         # Step 6
         def compile_vid():

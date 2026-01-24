@@ -2,6 +2,7 @@ print(f"Importing modules...")
 
 from src.transcription.transcriber_local import Transcriber
 from src.scraper.scraper import DataSaver
+from src.metadata.scoring import score_post
 from src.narration.narrarate import narrate
 from src.reddit_post_image.post_image_maker import make_reddit_post_image
 from src.video_editing.caption_maker import extract_word_timestamps_from_transcript
@@ -425,6 +426,11 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             if stop_flag and stop_flag.is_set():
                 break
             metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+            scores = score_post(post_data["title"], post_data["content"])
+            if scores:
+                metadata_dict["engagement"] = scores["engagement"]
+                metadata_dict["sentiment"] = scores["sentiment"]
+                metadata_dict["repost_quality"] = scores["repost_quality"]
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
             cleanup_temp_files()
         except Exception as e:
