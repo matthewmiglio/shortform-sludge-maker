@@ -258,7 +258,7 @@ def render_caption_frame(
     frame_size: tuple,
     words: list[str],
     highlight_index: int,
-    font_path: str = r"sour_gummy_fonts\SourGummy-Bold.ttf",
+    font_path: str = r"reddit_assets\SourGummy-Bold.ttf",
     max_line_length: int = 10,  # Wrap after this many characters
     save: bool = False,
 ) -> Image.Image:
