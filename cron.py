@@ -233,8 +233,9 @@ def upload_video(logger, state):
             logger.log("[UPLOAD] No unposted videos available")
             return False
 
-        # Select and upload one
-        selected_path, metadata = random.choice(unposted)
+        # Select highest repost_quality video
+        unposted.sort(key=lambda x: x[1].get("repost_quality", 0), reverse=True)
+        selected_path, metadata = unposted[0]
         video_path = os.path.join(selected_path, "video.mp4")
         title = metadata["title"]
         description = metadata["description"]

@@ -6,7 +6,7 @@ import json
 import os
 import random
 
-from src.metadata.scoring import score_post, MIN_ENGAGEMENT, MIN_REPOST_QUALITY
+from src.metadata.scoring import score_post
 
 
 def decode_surrogates(s):
@@ -14,21 +14,25 @@ def decode_surrogates(s):
 
 
 class Post:
-    def __init__(self, username, content, thread_name, title, url):
+    def __init__(self, username, content, thread_name, title, url, scores=None):
         self.username = username
         self.content = content
         self.thread_name = thread_name
         self.title = title
         self.url = url
+        self.scores = scores
 
     def to_dict(self):
-        return {
+        data = {
             "username": self.username,
             "content": self.content,
             "thread_name": self.thread_name,
             "title": self.title,
             "url": self.url,
         }
+        if self.scores:
+            data["scores"] = self.scores
+        return data
 
 
 class RedditScraper:
@@ -353,15 +357,9 @@ class DataSaver:
         print(f"[4/4] Scoring post...")
         scores = score_post(post.title, post.content)
         if scores:
-            eng = scores["engagement"]
-            rq = scores["repost_quality"]
-            print(f"[4/4] Scores: engagement={eng}, sentiment={scores['sentiment']}, repost_quality={rq}")
-            if eng < MIN_ENGAGEMENT or rq < MIN_REPOST_QUALITY:
-                print(f"[4/4] Skipping post (below threshold: engagement>={MIN_ENGAGEMENT}, repost_quality>={MIN_REPOST_QUALITY})")
-                return
+            print(f"[4/4] Scores: eng={scores['engagement']} sent={scores['sentiment']} rq={scores['repost_quality']} auth={scores['authenticity']} nc={scores['narrative_curiosity']}")
         else:
-            # if scoring fails, save anyway rather than lose the post
-            print("[4/4] Scoring unavailable, saving post without filtering.")
+            print("[4/4] Scoring unavailable, saving without scores.")
 
         data = post.to_dict()
         if scores:
@@ -390,6 +388,7 @@ class DataSaver:
                         data["thread_name"],
                         data["title"],
                         data["url"],
+                        scores=data.get("scores"),
                     )
                     posts.append(post)
         print(f"Loaded {len(posts)} posts from {self.data_folder_path}/")

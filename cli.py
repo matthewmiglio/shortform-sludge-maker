@@ -6,7 +6,6 @@ Provides the same operations as the GUI but via command line.
 
 import argparse
 import os
-import random
 import shutil
 import sys
 import threading
@@ -44,7 +43,7 @@ def get_stats():
     """Get current stats about scraped posts, videos, and uploads."""
     scraped_posts_folder = "reddit_data"
     final_videos_folder = "final_vids"
-    youtube_history_file = "data/youtube_post_history.csv"
+    youtube_history_file = "data/youtube_post_history.txt"
 
     scraped_posts_count = (
         len(os.listdir(scraped_posts_folder))
@@ -163,7 +162,8 @@ def cmd_upload(args):
 
     print(f"\nFound {len(unposted_subfolders)} unposted videos out of {len(all_subfolders)} total")
 
-    selected_subfolder, metadata = random.choice(unposted_subfolders)
+    unposted_subfolders.sort(key=lambda x: x[1].get("repost_quality", 0), reverse=True)
+    selected_subfolder, metadata = unposted_subfolders[0]
     selected_subfolder_path = os.path.join(videos_folder, selected_subfolder)
     video_path = os.path.join(selected_subfolder_path, "video.mp4")
 
@@ -290,7 +290,7 @@ Examples:
   python cli.py scrape -c 100      Scrape with 100 posts per thread
   python cli.py make               Generate videos continuously
   python cli.py list               List all videos and upload status
-  python cli.py upload             Select and upload a random video
+  python cli.py upload             Select and upload the best-scored video
   python cli.py upload -y          Upload without confirmation
   python cli.py auth               Reauthenticate YouTube credentials
         """

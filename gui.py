@@ -197,7 +197,7 @@ class App(tk.Tk):
     def refresh_stats(self):
         scraped_posts_folder = r"reddit_data"
         final_videos_folder = r"final_vids"
-        youtube_history_file = r"data/youtube_post_history.csv"
+        youtube_history_file = r"data/youtube_post_history.txt"
 
         scraped_posts_count = (
             len(os.listdir(scraped_posts_folder))

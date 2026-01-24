@@ -2,7 +2,6 @@ print(f"Importing modules...")
 
 from src.transcription.transcriber_local import Transcriber
 from src.scraper.scraper import DataSaver
-from src.metadata.scoring import score_post
 from src.narration.narrarate import narrate
 from src.reddit_post_image.post_image_maker import make_reddit_post_image
 from src.video_editing.caption_maker import extract_word_timestamps_from_transcript
@@ -42,7 +41,7 @@ SUB_SLUDGE_VIDEO_DIMS = (
 
 class PostUsageHistory:
     def __init__(self):
-        self.fp = "data/post_usage_history.csv"
+        self.fp = "data/post_usage_history.txt"
 
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
@@ -63,32 +62,65 @@ class PostUsageHistory:
         return False
 
 
-def get_post_image(posts, expected_width):
-    attempts = 0
-    max_attempts = 5000
-    while 1:
-        attempts += 1
+MIN_CONTENT_LENGTH = 300
+MAX_CONTENT_LENGTH = 1500
+MIN_ENGAGEMENT = 4
+MIN_REPOST_QUALITY = 6
+MIN_NARRATIVE_CURIOSITY = 4
 
-        if attempts > max_attempts:
-            print(f"Failed to create a post image after {max_attempts} attempts.")
-            break
 
-        # select a random post
-        random_post = random.choice(posts)
-        post_data = random_post.to_dict()
+def filter_posts(posts):
+    """Filter posts by usage history, content length, and scores."""
+    post_usage_history = PostUsageHistory()
+    eligible = []
 
-        # skip posts with empty content
+    for post in posts:
+        post_data = post.to_dict()
+
+        # skip empty content
         if not post_data["content"].strip():
             continue
 
-        # if url has been used before, retry
-        post_url = post_data["url"]
-        post_usage_history = PostUsageHistory()
-        if post_usage_history.post_exists(post_url):
-            # print(f"Post {post_url} already used, skipping...")
+        # skip already used
+        if post_usage_history.post_exists(post_data["url"]):
             continue
 
-        # try to use this stuff to make the post image
+        # skip posts without scores
+        scores = post_data.get("scores")
+        if not scores:
+            continue
+
+        # skip posts that are too short or too long for image creation
+        content_len = len(post_data["content"])
+        if content_len < MIN_CONTENT_LENGTH or content_len > MAX_CONTENT_LENGTH:
+            continue
+
+        # skip posts with bad scores
+        if scores.get("engagement", 0) < MIN_ENGAGEMENT:
+            continue
+        if scores.get("repost_quality", 0) < MIN_REPOST_QUALITY:
+            continue
+        if scores.get("narrative_curiosity", 0) < MIN_NARRATIVE_CURIOSITY:
+            continue
+
+        eligible.append(post)
+
+    return eligible
+
+
+def get_post_image(posts, expected_width):
+    eligible = filter_posts(posts)
+    print(f"[2] {len(eligible)} posts passed filtering (from {len(posts)} total)")
+
+    if not eligible:
+        print("[2] No eligible posts available.")
+        return None, None
+
+    random.shuffle(eligible)
+
+    for post in eligible:
+        post_data = post.to_dict()
+
         image_path = make_reddit_post_image(
             thread=post_data["thread_name"],
             title_text=post_data["title"],
@@ -99,16 +131,16 @@ def get_post_image(posts, expected_width):
             save=True,
         )
 
-        # if making the image didnt work, retry with another post
         if image_path is None:
             continue
 
-        # successfully made the image from an unused post
-        post_usage_history.add_post(post_url)
-        break
+        # successfully made the image
+        post_usage_history = PostUsageHistory()
+        post_usage_history.add_post(post_data["url"])
+        return image_path, post_data
 
-
-    return image_path, post_data
+    print("[2] Failed to create image from any eligible post.")
+    return None, None
 
 
 def cleanup_temp_files():
@@ -426,11 +458,9 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             if stop_flag and stop_flag.is_set():
                 break
             metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
-            scores = score_post(post_data["title"], post_data["content"])
+            scores = post_data.get("scores")
             if scores:
-                metadata_dict["engagement"] = scores["engagement"]
-                metadata_dict["sentiment"] = scores["sentiment"]
-                metadata_dict["repost_quality"] = scores["repost_quality"]
+                metadata_dict.update(scores)
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
             cleanup_temp_files()
         except Exception as e:

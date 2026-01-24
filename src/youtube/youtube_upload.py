@@ -3,7 +3,6 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 import os
 import json
-import random
 import shutil
 
 
@@ -58,7 +57,7 @@ class YoutubeUploader:
 
 class YoutubePostHistoryManager:
     def __init__(self):
-        self.fp = r"data/youtube_post_history.csv"
+        self.fp = r"data/youtube_post_history.txt"
         if not os.path.exists(self.fp):
             with open(self.fp, "w") as f:
                 f.write("")
@@ -85,6 +84,7 @@ def extract_metadata_from_folder(video_subfolder_path):
 
     sanitized = sanitize_metadata(metadata)
     sanitized["reddit_url"] = metadata.get("reddit_url", "")
+    sanitized["repost_quality"] = metadata.get("repost_quality", 0)
     return sanitized
 
 
@@ -169,8 +169,9 @@ def upload_from_final_vids():
         print("[!] No unposted videos available.")
         return False
 
-    # select one to post
-    selected_subfolder, metadata = random.choice(unposted_subfolders)
+    # select the highest repost_quality video
+    unposted_subfolders.sort(key=lambda x: x[1].get("repost_quality", 0), reverse=True)
+    selected_subfolder, metadata = unposted_subfolders[0]
     selected_subfolder_path = os.path.join(videos_folder, selected_subfolder)
     video_path = os.path.join(selected_subfolder_path, "video.mp4")
 
