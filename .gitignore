@@ -21,3 +21,5 @@ src/metadata/fine_tuner_results.json
 src/metadata/post_scoring_results.json
 tests/test_static_reddit_post.png
 tests/test_narration.wav
+tests/test_final_vid.mp4
+tests/test_final_vid_metadata.json

@@ -179,14 +179,8 @@ def generate_metadata(post_title: str, post_content: str) -> dict:
     Returns:
         dict with 'title' and 'description' keys
     """
-    print(f"[Metadata] Using {OLLAMA_MODEL} via Ollama")
-    print("[Metadata] Generating title...")
     title = generate_title(post_title, post_content)
-    print(f"[Metadata] Title: {title}")
-
-    print("[Metadata] Generating description...")
     description = generate_description(post_title, post_content)
-    print(f"[Metadata] Description: {description[:80]}...")
 
     return {
         "title": title,

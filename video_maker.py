@@ -10,6 +10,7 @@ from src.video_editing.caption_maker import extract_word_timestamps_from_transcr
 import json
 import random
 import time
+import uuid
 from src.sludge.sludge_video_extractor import Extractor
 from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip
 import os
@@ -219,7 +220,7 @@ def delete_file(file):
 
 
 def create_stacked_reddit_scroll_video(output_dir):
-    print("\n" + "="*70)
+    print("="*70)
     print("STARTING NEW VIDEO CREATION")
     print("="*70)
 
@@ -229,14 +230,14 @@ def create_stacked_reddit_scroll_video(output_dir):
     os.makedirs(temp_folder_name, exist_ok=True)
 
     # get scraped post data
-    print(f"\n[1] Loading scraped reddit data...")
+    print(f"[1] Loading scraped reddit data...")
     t = time.time()
     reddit_data_manager = DataSaver()
     posts = reddit_data_manager.get_all_posts()
     print(f"[1] Loaded {len(posts)} posts ({time.time()-t:.1f}s)")
 
     # create the static reddit post
-    print(f"\n[2] Creating post image...")
+    print(f"[2] Creating post image...")
     t = time.time()
     post_image_save_path, post_data = get_post_image(
         posts, expected_width=VIDEO_DIMS[0]
@@ -244,8 +245,6 @@ def create_stacked_reddit_scroll_video(output_dir):
     if post_image_save_path in [False, None]:
         print("[!] Fatal error: No eligible posts for image creation.")
         return False
-    eligible_count = len(filter_posts(posts))
-    print(f"[2] {eligible_count} posts passed filtering (from {len(posts)} total)")
     print(f"[2] Post: {post_data['title'][:60]}...")
     print(f"[2] Done ({time.time()-t:.1f}s)")
 
@@ -254,7 +253,7 @@ def create_stacked_reddit_scroll_video(output_dir):
     post_text = post_data["content"]
     narration_content = f"{post_title}. {post_text}"
 
-    print(f"\n[3] Generating narration...")
+    print(f"[3] Generating narration...")
     t = time.time()
     narration_audio_file_path, narration_duration = narrate(
         "jf_alpha", narration_content
@@ -262,7 +261,7 @@ def create_stacked_reddit_scroll_video(output_dir):
     print(f"[3] Narration: {narration_duration}s audio ({time.time()-t:.1f}s)")
 
     # make that a scrolling video
-    print(f"\n[4] Creating scrolling video...")
+    print(f"[4] Creating scrolling video...")
     t = time.time()
     scrolling_reddit_post_video_path = r"temp/reddit_post_scrolling_video.mp4"
     scroll_image(
@@ -270,11 +269,12 @@ def create_stacked_reddit_scroll_video(output_dir):
         out_video_path=scrolling_reddit_post_video_path,
         scroll_duration=narration_duration,
         height=SCROLLING_REDDIT_POST_HEIGHT,
+        width=VIDEO_DIMS[0],
     )
     print(f"[4] Done ({time.time()-t:.1f}s)")
 
     # craft the sub sludge video
-    print(f"\n[5] Extracting sludge video...")
+    print(f"[5] Extracting sludge video...")
     t = time.time()
     sub_sludge_extractor = Extractor()
     sub_sludge_video_path = r"temp/sub_sludge_video.mp4"
@@ -284,7 +284,7 @@ def create_stacked_reddit_scroll_video(output_dir):
     print(f"[5] Done ({time.time()-t:.1f}s)")
 
     # put the videos on top of each other
-    print(f"\n[6] Stacking videos...")
+    print(f"[6] Stacking videos...")
     t = time.time()
     stacked_video_path = r"temp/stacked_video.mp4"
     stack_videos_vertically(
@@ -293,16 +293,17 @@ def create_stacked_reddit_scroll_video(output_dir):
     print(f"[6] Done ({time.time()-t:.1f}s)")
 
     # add fade background with pad
-    print(f"\n[7] Adding faded background...")
+    print(f"[7] Adding faded background...")
     t = time.time()
     stacked_video_with_background_path = r"temp/stacked_video_with_background.mp4"
     add_fade_background(
-        stacked_video_path, sub_sludge_video_path, stacked_video_with_background_path
+        stacked_video_path, sub_sludge_video_path, stacked_video_with_background_path,
+        output_dims=VIDEO_DIMS,
     )
     print(f"[7] Done ({time.time()-t:.1f}s)")
 
     # add narration audio
-    print(f"\n[8] Adding narration audio...")
+    print(f"[8] Adding narration audio...")
     t = time.time()
     narrated_video_path = "temp/narrated_final_video.mp4"
     add_audio_to_video(
@@ -313,7 +314,7 @@ def create_stacked_reddit_scroll_video(output_dir):
     print(f"[8] Done ({time.time()-t:.1f}s)")
 
     total_time = time.time() - video_start
-    print(f"\n[SUCCESS] Video created in {total_time:.1f}s")
+    print(f"[SUCCESS] Video created in {total_time:.1f}s")
     return narrated_video_path, post_data
 
 
@@ -333,8 +334,7 @@ def compile_video_and_metadata(video_path, metadata_dict, output_folder):
         return False
 
     os.makedirs(output_folder, exist_ok=True)
-    this_output_index = len(os.listdir(output_folder))
-    subfolder_name = f"video_{this_output_index}"
+    subfolder_name = str(uuid.uuid4())[:8]
     subfolder_path = os.path.join(output_folder, subfolder_name)
     os.makedirs(subfolder_path, exist_ok=True)
 
@@ -346,7 +346,7 @@ def compile_video_and_metadata(video_path, metadata_dict, output_folder):
         json.dump(metadata_dict, f, indent=4)
 
     print(f"[FINAL] Saved to {subfolder_name}/")
-    print("="*70 + "\n")
+    print("="*70)
 
 
 from src.video_editing.video_editing_functions import (
@@ -440,13 +440,12 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             narrated_video_path, post_data = result
             if stop_flag and stop_flag.is_set():
                 break
-            print(f"\n[9] Generating metadata...")
+            print(f"[9] Generating metadata...")
             t = time.time()
             metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
             scores = post_data.get("scores")
             if scores:
                 metadata_dict.update(scores)
-            print(f"[9] Title: {metadata_dict.get('title', '')[:50]}")
             print(f"[9] Done ({time.time()-t:.1f}s)")
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
             cleanup_temp_files()

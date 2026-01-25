@@ -86,7 +86,7 @@ def cmd_scrape(args):
 
 def cmd_make(args):
     """Generate videos from scraped posts."""
-    print("\n" + "=" * 50)
+    print("=" * 50)
     print("STARTING VIDEO GENERATION")
     print("=" * 50)
     if args.count:
@@ -102,8 +102,15 @@ def cmd_make(args):
                 if stop_flag.is_set():
                     break
                 print(f"\n--- Video {i+1} of {args.count} ---")
-                narrated_video_path, post_data = create_stacked_reddit_scroll_video("final_vids")
+                result = create_stacked_reddit_scroll_video("final_vids")
+                if result is False:
+                    print("[!] No more usable posts available. Stopping.")
+                    break
+                narrated_video_path, post_data = result
                 metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+                scores = post_data.get("scores")
+                if scores:
+                    metadata_dict.update(scores)
                 compile_video_and_metadata(narrated_video_path, metadata_dict, "final_vids")
                 cleanup_temp_files()
         else:
@@ -270,8 +277,8 @@ def main():
         epilog="""
 Examples:
   python cli.py stats              Show current stats
-  python cli.py scrape             Scrape Reddit (default 30 posts total)
-  python cli.py scrape -c 100      Scrape 100 posts total across all threads
+  python cli.py scrape             Scrape Reddit (default 100 posts total)
+  python cli.py scrape -c 50       Scrape 50 posts total across all threads
   python cli.py make               Generate videos continuously
   python cli.py list               List all videos and upload status
   python cli.py upload             Select and upload the best-scored video
@@ -289,8 +296,8 @@ Examples:
     # scrape command
     scrape_parser = subparsers.add_parser("scrape", help="Scrape Reddit for content")
     scrape_parser.add_argument(
-        "-c", "--count", type=int, default=30,
-        help="Total number of posts to scrape across all threads (default: 30)"
+        "-c", "--count", type=int, default=100,
+        help="Total number of posts to scrape across all threads (default: 100)"
     )
     scrape_parser.set_defaults(func=cmd_scrape)
 

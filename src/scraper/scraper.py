@@ -113,13 +113,11 @@ class RedditScraper:
         # Try to quit gracefully first
         try:
             self.driver.quit()
-            print("[!] driver.quit() completed")
         except Exception as e:
             print(f"[!] driver.quit() failed: {e}")
 
         # Force kill by user-data-dir (most reliable for undetected_chromedriver)
         if user_data_dir and sys.platform == "win32":
-            print(f"[!] Searching for Chrome with user-data-dir: {user_data_dir}")
             try:
                 # Use PowerShell to find Chrome processes by command line
                 ps_cmd = f'''Get-CimInstance Win32_Process -Filter "name='chrome.exe'" | Where-Object {{ $_.CommandLine -like '*{user_data_dir.replace("'", "''")}*' }} | Select-Object -ExpandProperty ProcessId'''
@@ -129,7 +127,6 @@ class RedditScraper:
                 )
                 pids = [p.strip() for p in result.stdout.strip().splitlines() if p.strip().isdigit()]
                 for pid in pids:
-                    print(f"[!] Killing Chrome PID {pid} (matched user-data-dir)")
                     subprocess.run(["taskkill", "/F", "/T", "/PID", pid],
                                  capture_output=True, timeout=10)
                 if pids:
@@ -147,7 +144,6 @@ class RedditScraper:
                 except:
                     pass
 
-        print("[!] Browser closed")
 
     def check_if_blocked(self):
         """Check if blocked by Reddit and raise exception if so."""

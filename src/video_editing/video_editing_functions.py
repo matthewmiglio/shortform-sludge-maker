@@ -3,73 +3,49 @@ from moviepy.editor import VideoFileClip, AudioFileClip, CompositeVideoClip
 
 
 def stack_videos_vertically(top_video_path, bottom_video_path, out_video_path):
-    cap1 = cv2.VideoCapture(top_video_path)
-    cap2 = cv2.VideoCapture(bottom_video_path)
+    import subprocess
 
-    # Ensure both videos are open
-    if not cap1.isOpened():
-        raise ValueError(
-            f"top_video_path: {top_video_path} is invalid or cannot be opened."
-        )
-    if not cap2.isOpened():
-        raise ValueError(
-            f"bottom_video_path: {bottom_video_path} is invalid or cannot be opened."
-        )
+    # Get the width of the top video to scale both to match
+    width, _ = get_video_dims(top_video_path)
 
-    # Get properties (assume same fps)
-    fps = cap1.get(cv2.CAP_PROP_FPS)
-    width1 = int(cap1.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height1 = int(cap1.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    filter_complex = (
+        f"[0:v]scale={width}:-2[top];"
+        f"[1:v]scale={width}:-2[bottom];"
+        f"[top][bottom]vstack=inputs=2"
+    )
 
-    width2 = int(cap2.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height2 = int(cap2.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", top_video_path,
+        "-i", bottom_video_path,
+        "-filter_complex", filter_complex,
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        "-shortest", "-an", out_video_path,
+    ]
 
-    # Resize to same width (if needed)
-    common_width = min(width1, width2)
-
-    height1_resized = int(height1 * common_width / width1)
-    height2_resized = int(height2 * common_width / width2)
-    out_height = height1_resized + height2_resized
-
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(out_video_path, fourcc, fps, (common_width, out_height))
-
-    while True:
-        ret1, frame1 = cap1.read()
-        ret2, frame2 = cap2.read()
-
-        if not ret1 or not ret2:
-            break
-
-        frame1_resized = cv2.resize(frame1, (common_width, height1_resized))
-        frame2_resized = cv2.resize(frame2, (common_width, height2_resized))
-
-        stacked = cv2.vconcat([frame1_resized, frame2_resized])
-        out.write(stacked)
-
-    cap1.release()
-    cap2.release()
-    out.release()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[!] ffmpeg error in stack_videos_vertically: {result.stderr[-300:]}")
+        raise RuntimeError("stack_videos_vertically failed")
 
 
 def add_audio_to_video(video_path, audio_path, out_video_path):
-    # Load the video and audio
-    video = VideoFileClip(video_path)
-    audio = AudioFileClip(audio_path)
+    import subprocess
 
-    try:
-        # Match the audio duration to the video duration (trim if needed)
-        if audio.duration > video.duration:
-            audio = audio.subclip(0, video.duration)
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-i", audio_path,
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        out_video_path,
+    ]
 
-        # Set the audio to the video
-        final_video = video.set_audio(audio)
-
-        # Write the final video
-        final_video.write_videofile(out_video_path, codec="libx264", audio_codec="aac", logger=None)
-    finally:
-        video.close()
-        audio.close()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[!] ffmpeg error in add_audio_to_video: {result.stderr[-300:]}")
+        return False
 
     return out_video_path
 
@@ -93,24 +69,38 @@ def get_video_dims(video_path):
     return width, height
 
 
-def add_fade_background(main_video, fade_video, output_path):
+def add_fade_background(main_video, fade_video, output_path, output_dims=None, pad=40):
     """
-    Single-pass ffmpeg: scales fade_video to full dims, blurs it,
-    then overlays the main_video (with padding) centered on top.
+    Single-pass ffmpeg: scales fade_video to output dims, blurs it,
+    then overlays the main_video (shrunk by pad) centered on top.
+    pad controls the minimum blurred border width on each side.
     """
     import subprocess
 
-    width, height = get_video_dims(main_video)
-    pad = 50
-    fg_width = width - (pad * 2)
-    fg_height = int(fg_width * (height / width))
-    blur_sigma = 35  # approximates 71x71 Gaussian kernel
-    overlay_x = (width - fg_width) // 2
-    overlay_y = (height - fg_height) // 2
+    fg_width, fg_height = get_video_dims(main_video)
+
+    if output_dims:
+        out_width, out_height = output_dims
+    else:
+        out_width, out_height = fg_width + pad * 2, fg_height + pad * 2
+
+    # Scale foreground to fit within the padded area
+    max_fg_width = out_width - pad * 2
+    max_fg_height = out_height - pad * 2
+    scale_factor = min(max_fg_width / fg_width, max_fg_height / fg_height)
+    scaled_fg_width = int(fg_width * scale_factor)
+    scaled_fg_height = int(fg_height * scale_factor)
+    # Ensure even dimensions for h264
+    scaled_fg_width -= scaled_fg_width % 2
+    scaled_fg_height -= scaled_fg_height % 2
+
+    blur_sigma = 35
+    overlay_x = (out_width - scaled_fg_width) // 2
+    overlay_y = (out_height - scaled_fg_height) // 2
 
     filter_complex = (
-        f"[1:v]scale={width}:{height},gblur=sigma={blur_sigma}[bg];"
-        f"[0:v]scale={fg_width}:{fg_height}[fg];"
+        f"[1:v]scale={out_width}:{out_height},gblur=sigma={blur_sigma}[bg];"
+        f"[0:v]scale={scaled_fg_width}:{scaled_fg_height}[fg];"
         f"[bg][fg]overlay={overlay_x}:{overlay_y}"
     )
 
@@ -119,7 +109,7 @@ def add_fade_background(main_video, fade_video, output_path):
         "-i", main_video,
         "-i", fade_video,
         "-filter_complex", filter_complex,
-        "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
         "-an", output_path
     ]
 
@@ -129,30 +119,28 @@ def add_fade_background(main_video, fade_video, output_path):
         return False
 
 
-def scroll_image(image_path, out_video_path, scroll_duration, height):
-    # Load the image
-    image = cv2.imread(image_path)
-    if image is None:
-        raise ValueError("Image not found or unable to read.")
+def scroll_image(image_path, out_video_path, scroll_duration, height, width=None):
+    import subprocess
 
-    # Get image dimensions
-    img_height, img_width, _ = image.shape
+    vf = f"crop=iw:{height}:0:'t*(ih-{height})/{scroll_duration}'"
+    if width:
+        vf += f",scale={width}:{height}"
 
-    # Calculate the number of frames needed for the scroll
-    fps = 30  # Frames per second
-    total_frames = int(scroll_duration * fps)
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", image_path,
+        "-vf", vf,
+        "-t", str(scroll_duration),
+        "-r", "30",
+        "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
+        out_video_path,
+    ]
 
-    # Create a VideoWriter object
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(out_video_path, fourcc, fps, (img_width, height))
-
-    for i in range(total_frames):
-        # Calculate the vertical offset for scrolling
-        offset = int((i / total_frames) * (img_height - height))
-        frame = image[offset : offset + height, :, :]
-        out.write(frame)
-
-    out.release()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"[!] ffmpeg error in scroll_image: {result.stderr[-300:]}")
+        raise RuntimeError("scroll_image failed")
 
 
 ###bs for adding captions over videos
