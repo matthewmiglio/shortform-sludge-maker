@@ -25,9 +25,15 @@ from src.video_editing.video_editing_functions import (
     add_fade_background,
     add_audio_to_video,
 )
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 print(f"Successfully loaded all necessary support modules!")
+
+# Toggle for parallel execution of video rendering and metadata generation
+# When True: metadata generation runs in parallel with video steps 3-8
+# When False: metadata generation runs after video is complete (original behavior)
+PARALLEL_METADATA_GENERATION = True
 
 SUBREDDIT_ICON_URL = "https://www.redditinc.com/assets/images/site/reddit-logo.png"
 VIDEO_DIMS = (1080, 1920)
@@ -219,13 +225,11 @@ def delete_file(file):
             subprocess.run(["sudo", "rm", "-f", str(file)], check=False)
 
 
-def create_stacked_reddit_scroll_video(output_dir):
-    print("="*70)
-    print("STARTING NEW VIDEO CREATION")
-    print("="*70)
-
-    video_start = time.time()
-
+def prepare_post_data(output_dir):
+    """
+    Steps 1-2: Load scraped data and create post image.
+    Returns (post_image_save_path, post_data) or (None, None) on failure.
+    """
     temp_folder_name = r"temp"
     os.makedirs(temp_folder_name, exist_ok=True)
 
@@ -244,10 +248,18 @@ def create_stacked_reddit_scroll_video(output_dir):
     )
     if post_image_save_path in [False, None]:
         print("[!] Fatal error: No eligible posts for image creation.")
-        return False
+        return None, None
     print(f"[2] Post: {post_data['title'][:60]}...")
     print(f"[2] Done ({time.time()-t:.1f}s)")
 
+    return post_image_save_path, post_data
+
+
+def create_video_from_post(post_image_save_path, post_data):
+    """
+    Steps 3-8: Create video from post image and data.
+    Returns narrated_video_path or False on failure.
+    """
     # make a narration of this post
     post_title = post_data["title"]
     post_text = post_data["content"]
@@ -312,6 +324,28 @@ def create_stacked_reddit_scroll_video(output_dir):
         out_video_path=narrated_video_path,
     )
     print(f"[8] Done ({time.time()-t:.1f}s)")
+
+    return narrated_video_path
+
+
+def create_stacked_reddit_scroll_video(output_dir):
+    """
+    Full video creation pipeline (steps 1-8).
+    Wrapper that calls prepare_post_data and create_video_from_post.
+    """
+    print("="*70)
+    print("STARTING NEW VIDEO CREATION")
+    print("="*70)
+
+    video_start = time.time()
+
+    # Steps 1-2: Get post data and image
+    post_image_save_path, post_data = prepare_post_data(output_dir)
+    if post_image_save_path is None:
+        return False
+
+    # Steps 3-8: Create video
+    narrated_video_path = create_video_from_post(post_image_save_path, post_data)
 
     total_time = time.time() - video_start
     print(f"[SUCCESS] Video created in {total_time:.1f}s")
@@ -433,20 +467,67 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
             print("[!] Stop flag detected, stopping video generation...")
             break
         try:
-            result = create_stacked_reddit_scroll_video(output_dir)
-            if result is False:
+            print("="*70)
+            print("STARTING NEW VIDEO CREATION")
+            print("="*70)
+
+            video_start = time.time()
+
+            # Steps 1-2: Get post data and image (must complete before parallelization)
+            post_image_save_path, post_data = prepare_post_data(output_dir)
+            if post_image_save_path is None:
                 print("[!] No more usable posts available. Stopping video generation.")
                 break
-            narrated_video_path, post_data = result
+
             if stop_flag and stop_flag.is_set():
                 break
-            print(f"[9] Generating metadata...")
-            t = time.time()
-            metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+
+            if PARALLEL_METADATA_GENERATION:
+                # Run video creation (steps 3-8) and metadata generation in parallel
+                narrated_video_path = None
+                metadata_dict = None
+
+                def video_task():
+                    return create_video_from_post(post_image_save_path, post_data)
+
+                def metadata_task():
+                    print(f"[9] Generating metadata (parallel)...")
+                    t = time.time()
+                    result = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+                    print(f"[9] Metadata done ({time.time()-t:.1f}s)")
+                    return result
+
+                with ThreadPoolExecutor(max_workers=2) as executor:
+                    video_future = executor.submit(video_task)
+                    metadata_future = executor.submit(metadata_task)
+
+                    # Wait for both to complete
+                    narrated_video_path = video_future.result()
+                    metadata_dict = metadata_future.result()
+
+                total_time = time.time() - video_start
+                print(f"[SUCCESS] Video created in {total_time:.1f}s (parallel mode)")
+
+            else:
+                # Sequential execution (original behavior)
+                narrated_video_path = create_video_from_post(post_image_save_path, post_data)
+
+                total_time = time.time() - video_start
+                print(f"[SUCCESS] Video created in {total_time:.1f}s")
+
+                if stop_flag and stop_flag.is_set():
+                    break
+
+                print(f"[9] Generating metadata...")
+                t = time.time()
+                metadata_dict = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))
+                print(f"[9] Done ({time.time()-t:.1f}s)")
+
+            # Add scores to metadata
             scores = post_data.get("scores")
             if scores:
                 metadata_dict.update(scores)
-            print(f"[9] Done ({time.time()-t:.1f}s)")
+
             compile_video_and_metadata(narrated_video_path, metadata_dict, output_dir)
             cleanup_temp_files()
         except Exception as e:
