@@ -461,7 +461,15 @@ def create_slop_with_captions_video():
 
 
 # main entry point functions
-def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=None):
+def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=None, register_thread_callback=None):
+    """
+    Main entry point for video generation.
+
+    Args:
+        output_dir: Directory to save final videos
+        stop_flag: Threading event to signal stop
+        register_thread_callback: Optional callback to register child threads for GUI output routing
+    """
     while True:
         if stop_flag and stop_flag.is_set():
             print("[!] Stop flag detected, stopping video generation...")
@@ -488,9 +496,13 @@ def create_all_stacked_reddit_scroll_videos(output_dir="final_vids", stop_flag=N
                 metadata_dict = None
 
                 def video_task():
+                    if register_thread_callback:
+                        register_thread_callback()
                     return create_video_from_post(post_image_save_path, post_data)
 
                 def metadata_task():
+                    if register_thread_callback:
+                        register_thread_callback()
                     print(f"[9] Generating metadata (parallel)...")
                     t = time.time()
                     result = create_metadata(post_data["title"], post_data["content"], post_data.get("url"))

@@ -408,8 +408,18 @@ class VideoTab(tk.Frame):
             print("="*50)
             print("STARTING VIDEO GENERATION")
             print("="*50)
+
+            def register_child_thread():
+                """Callback to register child threads (from ThreadPoolExecutor) with this terminal."""
+                self.controller.stdout_redirector.register_thread(self.terminal)
+                self.controller.stderr_redirector.register_thread(self.terminal)
+
             try:
-                create_all_stacked_reddit_scroll_videos(output_dir=r"final_vids", stop_flag=self.stop_flag)
+                create_all_stacked_reddit_scroll_videos(
+                    output_dir=r"final_vids",
+                    stop_flag=self.stop_flag,
+                    register_thread_callback=register_child_thread,
+                )
                 print("="*50)
                 print("VIDEO GENERATION STOPPED" if self.stop_flag.is_set() else "VIDEO GENERATION COMPLETE")
                 print("="*50)
